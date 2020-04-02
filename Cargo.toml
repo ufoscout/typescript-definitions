@@ -1,5 +1,5 @@
 [package]
-name = "typescript-definitions"
+name = "typescript-definitions-ufo-patch"
 version = "0.1.10"
 description = "serde support for exporting Typescript definitions"
 readme = "README.md"
