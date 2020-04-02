@@ -1,5 +1,5 @@
 [package]
-name = "typescript-definitions-derive"
+name = "typescript-definitions-derive-ufo-patch"
 version = "0.1.10"
 description = "serde support for exporting Typescript definitions"
 authors = ["Tim Ryan <id@timryan.org>", "Sam Rijs <srijs@airpost.net>" , "Ian Castleden <ian.castleden@gmail.com>"]
