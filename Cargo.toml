@@ -14,7 +14,7 @@ exclude = ['scripts/*', 'templates/*' ]
 
 [dependencies]
 serde = "1.0.87"
-typescript-definitions-derive = { version = "0.1.10",  path = "typescript-definitions-derive-ufo-patch" }
+typescript-definitions-derive = { version = "0.1.10",  path = "typescript-definitions-derive", package = "typescript-definitions-derive-ufo-patch" }
 
 [dev-dependencies]
 serde = { version = "1.0.87", features = ["derive"] }
