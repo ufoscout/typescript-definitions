@@ -48,22 +48,6 @@ pub trait TypeScriptifyTrait {
 /// Or provide your own serializer:
 /// `typescript-definitions` only checks the final *name* "as_byte_string" of the path.
 ///
-/// e.g.
-/// ```
-/// use serde::Serialize;
-/// use typescript_definitions::{TypeScriptify, TypeScriptifyTrait};
-///
-/// #[derive(Serialize, TypeScriptify)]
-/// struct S {
-///     #[serde(serialize_with="typescript_definitions::as_byte_string")]
-///     image : Vec<u8>,
-///     buffer: &'static [u8],
-/// }
-///
-/// println!("{}", S::type_script_ify());
-/// ```
-/// prints `export type S = { image: string, buffer: number[] };`.
-///
 pub fn as_byte_string<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
