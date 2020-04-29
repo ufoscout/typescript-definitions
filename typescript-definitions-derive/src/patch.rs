@@ -34,8 +34,9 @@ use std::borrow::Cow;
 
 const TRIPPLE_EQ: &str = "\"__============__\"";
 const NL_PATCH: &str = "\"__nlnlnlnl__\"";
+const TS_IGNORE_PATCH: &str = "\"__ts_ignore__\"";
 // type N = [(&'static str, &'static str); 10];
-const NAMES: [(&str, &str); 13] = [
+const NAMES: [(&str, &str); 14] = [
     ("brack", r"\s*\[\s+\]"),
     ("brace", r"\{\s+\}"),
     ("colon", r"\s+[:]\s"),
@@ -48,6 +49,7 @@ const NAMES: [(&str, &str); 13] = [
     ("call", r"\s\(\s+\)\s"),
     ("dot", r"\s\.\s"),
     ("nlpatch", NL_PATCH), // for adding newlines to output string
+    ("tsignore", TS_IGNORE_PATCH), // for adding ts-ignore comments to output string
     ("nl", r"\n+"),        // last!
 ];
 lazy_static! {
@@ -116,6 +118,7 @@ pub fn patch(s: &str) -> Cow<'_, str> {
             "dot" => ".",
             "call" => " () ",
             "nlpatch" => "\n",
+            "tsignore" => "//@ts-ignore\n",
             _ => return Cow::Owned(c.get(0).unwrap().as_str().to_owned()), // maybe should just panic?
         };
         Cow::Borrowed(m)
@@ -130,6 +133,11 @@ pub fn eq() -> Literal {
 #[inline]
 pub fn nl() -> Literal {
     Literal::string(&NL_PATCH[1..NL_PATCH.len() - 1])
+}
+
+#[inline]
+pub fn tsignore() -> Literal {
+    Literal::string(&TS_IGNORE_PATCH[1..TS_IGNORE_PATCH.len() - 1])
 }
 
 // #[inline]

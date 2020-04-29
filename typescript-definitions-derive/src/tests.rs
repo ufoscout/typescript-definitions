@@ -18,7 +18,7 @@ mod macro_test {
             }
         );
 
-        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse_body());
+        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse(true));
         match result {
             Ok(_x) => assert!(false, "expecting panic!"),
             Err(ref msg) => assert_snapshot_matches!( msg.downcast_ref::<String>().unwrap(),
@@ -39,7 +39,7 @@ mod macro_test {
                 c: DDD,
             }
         );
-        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse_body());
+        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse(true));
         match result {
             Ok(_x) => assert!(false, "expecting panic!"),
             Err(ref msg) => assert_snapshot_matches!( msg.downcast_ref::<String>().unwrap(),
@@ -97,7 +97,7 @@ mod macro_test {
                 b: Vec<T>,
             }
         );
-        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse_body());
+        let result = std::panic::catch_unwind(move || Typescriptify::new(tokens).parse(true));
         match result {
             Ok(_x) => assert!(false, "expecting panic!"),
             Err(ref msg) => assert_snapshot_matches!( msg.downcast_ref::<String>().unwrap(),

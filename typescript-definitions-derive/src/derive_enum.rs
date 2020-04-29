@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 use super::patch::{eq, nl};
+use super::QuoteT;
 use super::{filter_visible, ident_from_str, ParseContext, QuoteMaker, QuoteMakerKind};
+use crate::patch::tsignore;
 use proc_macro2::Literal;
 use quote::quote;
 use serde_derive_internals::{ast, ast::Variant, attr::EnumTag};
@@ -19,6 +21,8 @@ struct TagInfo<'a> {
     content: Option<&'a str>,
     /// flattened without tag `{ "key1": "", "key2": "" }`
     untagged: bool,
+    /// externally tagged
+    externally_tagged: bool,
 }
 impl<'a> TagInfo<'a> {
     fn from_enum(e: &'a EnumTag) -> Self {
@@ -27,24 +31,48 @@ impl<'a> TagInfo<'a> {
                 tag: Some(tag),
                 content: None,
                 untagged: false,
+                externally_tagged: false,
             },
             EnumTag::Adjacent { tag, content, .. } => TagInfo {
                 tag: Some(tag),
                 content: Some(&content),
                 untagged: false,
+                externally_tagged: false,
             },
             EnumTag::External => TagInfo {
                 tag: None,
                 content: None,
                 untagged: false,
+                externally_tagged: true,
             },
             EnumTag::None => TagInfo {
                 tag: None,
                 content: None,
                 untagged: true,
+                externally_tagged: false,
             },
         }
     }
+}
+
+struct HandlerSource {
+    /// None indicates Unit
+    input_type: Option<QuoteT>,
+    /// None indicates no input should be passed
+    input_post_accessor: Option<QuoteT>,
+    /// get the variant type
+    input_tag_accessor: QuoteT,
+}
+
+struct VariantQuoteMaker {
+    /// message type possibly including tag key value
+    pub source: QuoteT,
+    /// type guard quote token stream
+    pub verify: Option<QuoteT>,
+    /// enum factory quote token stream
+    // pub enum_factory: Result<QuoteT, &'static str>,
+    /// inner type token stream
+    pub inner_type: Option<QuoteT>,
 }
 
 impl<'a> ParseContext {
@@ -91,11 +119,13 @@ impl<'a> ParseContext {
             return QuoteMaker {
                 source: quote! ( { #(#k = #v),* } ),
                 verify,
+                enum_factory: Err("factory cannot be created with raw enum type"),
+                enum_handler: Err("handler cannot be created with raw enum type"),
                 kind: QuoteMakerKind::Enum,
             };
         }
 
-        let content = variants
+        let content: Vec<VariantQuoteMaker> = variants
             .iter()
             .map(|variant| match variant.style {
                 ast::Style::Struct => {
@@ -111,19 +141,20 @@ impl<'a> ParseContext {
 
         // OK generate A | B | C etc
         let newl = nl();
+        let tsignore = tsignore();
         let body = content.iter().map(|q| q.source.clone());
-        let nl = content.iter().map(|_| quote!(#newl));
         let verify = if self.gen_guard {
             let v = content.iter().map(|q| q.verify.clone().unwrap());
+            let newls = std::iter::repeat(quote!(#newl));
 
             let obj = &self.arg_name;
-            let nl = content.iter().map(|_| quote!(#newl));
+            // let newls = std::iter::from_fn(|| Some(quote!(#newl)));
             // obj can't be null or undefined
             Some(quote!(
                 {
                     if (#obj == undefined) return false;
 
-                    #( #nl if ( ( () => #v )() ) return true; )*
+                    #( #newls if ( ( () => #v )() ) return true; )*
                     #newl return false;
                 }
             ))
@@ -131,16 +162,67 @@ impl<'a> ParseContext {
             None
         };
 
+        let enum_handler = taginfo
+            .tag
+            .as_ref()
+            .ok_or("serde tag must be specified to create enum handler")
+            .and_then(|tag_key| -> Result<QuoteT, &'static str> {
+                let args = content.iter().map(|q|
+                    q.inner_type
+                    .as_ref()
+                    .map(|inner_type|
+                        quote!(message: #inner_type)
+                    ).unwrap_or(
+                        quote!()
+                    ));
+                let on_tag_name = variants.iter().map(|v| ident_from_str(&format!("on{}",(v.ident.to_string()))));
+                let tag_key_dq_1 = Literal::string(tag_key);
+                let ret_type_1 = ident_from_str(
+                    self.global_attrs
+                        .ts_handler_return
+                        .as_ref()
+                        // default return type to any
+                        .unwrap_or(&String::from("any")),
+                );
+                let ret_type = std::iter::repeat(ret_type_1.clone());
+
+                let newls = std::iter::repeat(quote!(#newl));
+                let handle_prefix_dq_1 = Literal::string("on");
+
+                let type_ident = super::patch(&self.ident.to_string()).to_string();
+                let export_interface_1 = ident_from_str(
+                    self.global_attrs
+                    .ts_handler_name
+                    .as_ref()
+                    // default naming
+                    .unwrap_or(&format!("Handle{}", &type_ident)));
+
+                let ident_1 = ident_from_str(&type_ident);
+                let apply_ident_1 = ident_from_str(&format!("apply{}", &type_ident));
+                let access_input_content_1 = taginfo.content.map(|content_key| quote!(input[#content_key])).unwrap_or(quote!(input));
+
+                Ok(quote!(export interface #export_interface_1 {
+                        #( #newls  #on_tag_name(#args): #ret_type;)*#newl
+                    }#newl
+                    export function #apply_ident_1(handler: #export_interface_1, input: #ident_1): #ret_type_1 {#newl
+                        #tsignore
+                        return handler[#handle_prefix_dq_1 + input[#tag_key_dq_1]](#access_input_content_1);#newl
+                    }#newl
+                ))
+            });
+
+        let newls = std::iter::repeat(quote!(#newl));
         QuoteMaker {
-            source: quote! ( #( #nl | #body)* ),
+            source: quote! ( #( #newls | #body)* ),
             verify,
-            kind: QuoteMakerKind::Union {
-                enum_factory: None,
-                enum_handler: None,
-            },
+            enum_factory: Err("not implemented"), // todo
+            enum_handler,
+            kind: QuoteMakerKind::Union,
         }
     }
-    fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> QuoteMaker {
+
+    /// Depends on TagInfo for layout
+    fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> VariantQuoteMaker {
         let variant_name = variant.attrs.name().serialize_name(); // use serde name instead of variant.ident
         let eq = eq();
 
@@ -155,10 +237,10 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            return QuoteMaker {
+            return VariantQuoteMaker {
                 source: quote!(#variant_name),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: None,
             };
         }
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -172,21 +254,23 @@ impl<'a> ParseContext {
         } else {
             None
         };
-        QuoteMaker {
+        VariantQuoteMaker {
             source: quote! (
                 { #tag: #variant_name }
             ),
             verify,
-            kind: QuoteMakerKind::Object,
+            inner_type: None,
         }
     }
 
+    /// Depends on TagInfo for layout
+    /// example variant: `C(u32)`
     fn derive_newtype_variant(
         &self,
         taginfo: &TagInfo,
         variant: &Variant,
         field: &ast::Field<'a>,
-    ) -> QuoteMaker {
+    ) -> VariantQuoteMaker {
         if field.attrs.skip_serializing() {
             return self.derive_unit_variant(taginfo, variant);
         };
@@ -203,10 +287,10 @@ impl<'a> ParseContext {
                 } else {
                     None
                 };
-                return QuoteMaker {
+                return VariantQuoteMaker {
                     source: quote! ( #ty ),
                     verify,
-                    kind: QuoteMakerKind::Object,
+                    inner_type: Some(ty.clone()),
                 };
             };
             let tag = ident_from_str(&variant_name);
@@ -228,13 +312,13 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            return QuoteMaker {
+            return VariantQuoteMaker {
                 source: quote! (
                     { #tag : #ty }
 
                 ),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: Some(ty.clone()),
             };
         };
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -259,22 +343,25 @@ impl<'a> ParseContext {
         } else {
             None
         };
-        QuoteMaker {
+
+        VariantQuoteMaker {
             source: quote! (
                 { #tag: #variant_name; #content: #ty }
             ),
             verify,
-            kind: QuoteMakerKind::Object,
+            inner_type: Some(ty.clone()),
         }
     }
 
+    /// Depends on TagInfo for layout
+    /// `C { a: u32, b: u32 }` => `C: { a: number, b: number }`
     fn derive_struct_variant(
         &self,
         taginfo: &TagInfo,
         variant: &Variant,
         fields: &[ast::Field<'a>],
         ast_container: &ast::Container,
-    ) -> QuoteMaker {
+    ) -> VariantQuoteMaker {
         use std::collections::HashSet;
         let fields = filter_visible(fields);
         if fields.is_empty() {
@@ -286,8 +373,13 @@ impl<'a> ParseContext {
         let contents = self.derive_fields(&fields).collect::<Vec<_>>();
         let variant_name = self.variant_name(variant);
 
+        let ty_inner = quote!(#(#contents);*);
+        let ty = quote! (
+            { #ty_inner }
+        );
+
         let last = nl();
-        let nl = contents.iter().map(|_| quote!(#last));
+        let nl = std::iter::repeat(quote!(#last));
         if taginfo.tag.is_none() {
             if taginfo.untagged {
                 let verify = if self.gen_guard {
@@ -302,12 +394,10 @@ impl<'a> ParseContext {
                 } else {
                     None
                 };
-                return QuoteMaker {
-                    source: quote! (
-                        { #(#contents);* }
-                    ),
+                return VariantQuoteMaker {
+                    source: quote!(#ty),
                     verify,
-                    kind: QuoteMakerKind::Object,
+                    inner_type: Some(ty.clone()),
                 };
             };
             let v = &quote!(v);
@@ -326,12 +416,12 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            return QuoteMaker {
+            return VariantQuoteMaker {
                 source: quote! (
-                    { #tag : { #(#contents);* }  }
+                    { #tag : #ty  }
                 ),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: Some(ty.clone()),
             };
         }
         let tag_str = taginfo.tag.unwrap();
@@ -357,13 +447,12 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            QuoteMaker {
+            VariantQuoteMaker {
                 source: quote! (
-                    { #tag: #variant_name; #content: { #(#contents);* } }
-
+                    { #tag: #variant_name; #content: #ty }
                 ),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: Some(ty.clone()),
             }
         } else {
             if let Some(ref cx) = self.ctxt {
@@ -393,12 +482,13 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            QuoteMaker {
+            // spread together tagged no content
+            VariantQuoteMaker {
                 source: quote! (
-                    { #tag: #variant_name; #(#contents);* }
+                    { #tag: #variant_name; #ty_inner }
                 ),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: Some(ty.clone()),
             }
         }
     }
@@ -408,15 +498,17 @@ impl<'a> ParseContext {
         variant.attrs.name().serialize_name() // use serde name instead of variant.ident
     }
 
+    /// `B(u32, u32)` => `B: [number, number]`
     fn derive_tuple_variant(
         &self,
         taginfo: &TagInfo,
         variant: &Variant,
         fields: &[ast::Field<'a>],
-    ) -> QuoteMaker {
+    ) -> VariantQuoteMaker {
         let variant_name = self.variant_name(variant);
         let fields = filter_visible(fields);
         let contents = self.derive_field_tuple(&fields);
+        let ty = quote!([ #(#contents),* ]);
 
         if taginfo.tag.is_none() {
             if taginfo.untagged {
@@ -434,12 +526,10 @@ impl<'a> ParseContext {
                 } else {
                     None
                 };
-                return QuoteMaker {
-                    source: quote! (
-                     [ #(#contents),* ]
-                    ),
+                return VariantQuoteMaker {
+                    source: quote! (#ty),
                     verify,
-                    kind: QuoteMakerKind::Object,
+                    inner_type: Some(ty.clone()),
                 };
             }
             let tag = ident_from_str(&variant_name);
@@ -458,13 +548,10 @@ impl<'a> ParseContext {
             } else {
                 None
             };
-            return QuoteMaker {
-                source: quote! (
-                 { #tag : [ #(#contents),* ] }
-
-                ),
+            return VariantQuoteMaker {
+                source: quote! ({ #tag : #ty }),
                 verify,
-                kind: QuoteMakerKind::Object,
+                inner_type: Some(ty.clone()),
             };
         };
 
@@ -491,12 +578,44 @@ impl<'a> ParseContext {
         } else {
             None
         };
-        QuoteMaker {
+        VariantQuoteMaker {
             source: quote! (
-            { #tag: #variant_name; #content : [ #(#contents),* ] }
+            { #tag: #variant_name; #content : #ty }
             ),
             verify,
-            kind: QuoteMakerKind::Object,
+            inner_type: Some(ty.clone()),
         }
+    }
+}
+
+fn get_enum_handler(
+    taginfo: &TagInfo,
+    variant_name: &str,
+    tag_key: &str,
+    ty: Option<&QuoteT>,
+) -> HandlerSource {
+    // default external tagging { "Variant1" : { "a": 1 } }
+    HandlerSource {
+        input_type: ty.map(|typ| quote! ( #typ )),
+        input_tag_accessor: quote!([#tag_key]),
+        input_post_accessor: {
+            // unit type should be None
+            ty.map(|_| {
+                if taginfo.untagged {
+                    // content mixed in with type together
+                    quote!()
+                } else if taginfo.externally_tagged {
+                    // located at
+                    quote!([#variant_name])
+                } else {
+                    match taginfo.content {
+                        // located at
+                        Some(content_key) => quote!([ #content_key ]),
+                        // spread
+                        None => quote!(),
+                    }
+                }
+            })
+        },
     }
 }

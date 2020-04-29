@@ -44,18 +44,17 @@ struct QuoteMaker {
     pub source: QuoteT,
     /// type guard quote token stream
     pub verify: Option<QuoteT>,
+    /// enum factory quote token stream
+    pub enum_factory: Result<QuoteT, &'static str>,
+    /// enum handler quote token stream
+    pub enum_handler: Result<QuoteT, &'static str>,
     pub kind: QuoteMakerKind,
 }
 
 enum QuoteMakerKind {
     Object,
     Enum,
-    Union {
-        /// enum factory quote token stream
-        enum_factory: Option<QuoteT>,
-        /// enum handler quote token stream
-        enum_handler: Option<QuoteT>,
-    },
+    Union,
 }
 
 /* #region helpers */
@@ -206,13 +205,13 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
     };
 
     let type_script_enum_handlers = if cfg!(feature = "type-enum-handlers") {
-        let verifier = match tsy.verify_source() {
+        let handlers = match parsed.export_type_handler_source() {
             Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
             None => quote!(None),
         };
         quote!(
             fn type_script_enum_handlers() -> Option<::std::borrow::Cow<'static,str>> {
-                    #verifier
+                    #handlers
             }
         )
     } else {
@@ -430,16 +429,13 @@ struct TSOutput {
 
 impl TSOutput {
     fn export_type_handler_source(&self) -> Option<String> {
-        if let QuoteMakerKind::Enum = self.q_maker.kind {
-            Some(format!(
-                "{}export enum {} {};",
+        self.q_maker.enum_handler.as_ref().ok().map(|content| {
+            format!(
+                "{}{}",
                 self.pctxt.global_attrs.to_comment_str(),
-                self.ident,
-                patch(&self.q_maker.source.to_string())
-            ))
-        } else {
-            None
-        }
+                patch(&content.to_string())
+            )
+        })
     }
 
     fn export_type_definition_source(&self) -> String {
