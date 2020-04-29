@@ -38,6 +38,57 @@ pub trait TypeScriptifyTrait {
     #[cfg(feature = "type-guards")]
     /// Available with `--features="type-guards"`
     fn type_script_guard() -> Option<Cow<'static, str>>;
+
+    #[cfg(feature = "type-enum-factories")]
+    /// Available with `--features="type-enum-factories"`
+    ///
+    ///  * [`name`] – is raw string identifier for factory, otherwise defaults to `${NAME}Factory`
+    ///
+    /// Example ([Internally Tagged](https://serde.rs/enum-representations.html#internally-tagged)):
+    ///
+    /// Input
+    /// ```rust
+    /// #[derive(Deserialize, Serialize, TypeScriptify)]
+    /// #[serde(tag = "kind")]
+    /// enum Foo { A { value: String }, B { bar: i32 } }
+    /// ```
+    /// Output
+    /// ```typescript
+    /// export const FooFactory = {
+    ///     A(inner: { value: string }) { return { kind: "A", ...inner } }
+    ///     B(inner: { bar: number }) { return { kind: "B", ...inner } }
+    /// }
+    /// ```
+    fn type_script_enum_factory(name: Option<String>) -> Option<Cow<'static, str>>;
+
+    #[cfg(feature = "type-enum-handlers")]
+    /// Available with `--features="type-enum-handlers"`
+    ///
+    ///  * [`name`] – is raw string identifier for interface identifier, otherwise defaults to `${NAME}Handler`
+    ///  * [`return_type`] – optional raw string type definition for the return type, otherwise defaults to "any"
+    ///
+    /// Example ([Adjacently Tagged](https://serde.rs/enum-representations.html#adjacently-tagged)):
+    ///
+    /// Input
+    /// ```rust
+    /// #[derive(Deserialize, Serialize, TypeScriptify)]
+    /// #[serde(tag = "kind", content = "value"))]
+    /// enum Foo { A { value: String }, B { bar: i32 } }
+    /// ```
+    ///
+    /// Output
+    /// ```typescript
+    /// export interface FooHandler {
+    ///     A(inner: { value: string }): void
+    ///     B(inner: { bar: number }): void
+    /// }
+    /// /** Apply deserialized `Foo` object to the handler `FooHandler` and return the handler's result */
+    /// export function applyFoo(outer: Foo, to: FooHandler): void { return to[outer["kind"]](outer["value"]) }
+    /// ```
+    fn type_script_enum_handlers(
+        name: Option<String>,
+        return_type: Option<String>,
+    ) -> Option<Cow<'static, str>>;
 }
 /// # String serializer for `u8` byte buffers.
 ///

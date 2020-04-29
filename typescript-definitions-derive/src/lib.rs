@@ -38,15 +38,27 @@ use patch::patch;
 // too many TokenStreams around! give it a different name
 type QuoteT = proc_macro2::TokenStream;
 
-//type QuoteMaker = quotet::QuoteT<'static>;
-
 type Bounds = Vec<TSType>;
 
 struct QuoteMaker {
-    pub body: QuoteT,
+    pub source: QuoteT,
+    /// type guard quote token stream
     pub verify: Option<QuoteT>,
-    pub is_enum: bool,
+    pub kind: QuoteMakerKind,
 }
+
+enum QuoteMakerKind {
+    Object,
+    Union {
+        /// enum factory quote token stream
+        enum_factory: Option<QuoteT>,
+        /// enum handler quote token stream
+        enum_handler: Option<QuoteT>,
+    },
+}
+
+/* #region helpers */
+
 #[allow(unused)]
 fn is_wasm32() -> bool {
     use std::env;
@@ -114,9 +126,10 @@ cfg_if! {
 #[allow(unused)]
 fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
     let verify = cfg!(feature = "type-guards");
-    let parsed = Typescriptify::parse(verify, input);
-    let export_string = parsed.wasm_string();
-    let name = parsed.ctxt.ident.to_string().to_uppercase();
+    let tsy = Typescriptify::new(input);
+    let parsed = tsy.parse(verify);
+    let export_string = parsed.export_type_definition_source();
+    let name = tsy.ident.to_string().to_uppercase();
 
     let export_ident = ident_from_str(&format!("TS_EXPORT_{}", name));
 
@@ -126,7 +139,7 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
         pub const #export_ident : &'static str = #export_string;
     };
 
-    if let Some(ref verify) = parsed.wasm_verify() {
+    if let Some(ref verify) = tsy.verify_source() {
         let export_ident = ident_from_str(&format!("TS_EXPORT_VERIFY_{}", name));
         q.extend(quote!(
             #[wasm_bindgen(typescript_custom_section)]
@@ -136,8 +149,7 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
 
     // just to allow testing... only `--features=test` seems to work
     if cfg!(any(test, feature = "test")) {
-        let typescript_ident =
-            ident_from_str(&format!("{}___typescript_definition", &parsed.ctxt.ident));
+        let typescript_ident = ident_from_str(&format!("{}___typescript_definition", &tsy.ident));
 
         q.extend(quote!(
             fn #typescript_ident ( ) -> &'static str {
@@ -155,21 +167,50 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
 
 #[allow(unused)]
 fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
+    // panic!("after here");
     let verify = cfg!(feature = "type-guards");
+    let tsy = Typescriptify::new(input);
+    let parsed = tsy.parse(verify);
+    let export_string = parsed.export_type_definition_source();
+    let ident = &tsy.ident;
 
-    let parsed = Typescriptify::parse(verify, input);
-    let export_string = parsed.wasm_string();
-    let ident = &parsed.ctxt.ident;
-
-    let (impl_generics, ty_generics, where_clause) = parsed.ctxt.rust_generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = tsy.generics.split_for_impl();
 
     let type_script_guard = if cfg!(feature = "type-guards") {
-        let verifier = match parsed.wasm_verify() {
+        let verifier = match tsy.verify_source() {
             Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
             None => quote!(None),
         };
         quote!(
-            fn type_script_guard() ->  Option<::std::borrow::Cow<'static,str>> {
+            fn type_script_guard() -> Option<::std::borrow::Cow<'static,str>> {
+                    #verifier
+            }
+        )
+    } else {
+        quote!()
+    };
+
+    let type_script_enum_factory = if cfg!(feature = "type-enum-factories") {
+        let verifier = match tsy.verify_source() {
+            Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
+            None => quote!(None),
+        };
+        quote!(
+            fn type_script_enum_factory(name: Option<String>) -> Option<::std::borrow::Cow<'static,str>> {
+                    #verifier
+            }
+        )
+    } else {
+        quote!()
+    };
+
+    let type_script_enum_handlers = if cfg!(feature = "type-enum-handlers") {
+        let verifier = match tsy.verify_source() {
+            Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
+            None => quote!(None),
+        };
+        quote!(
+            fn type_script_enum_handlers(name: Option<String>, return_type: Option<String>) -> Option<::std::borrow::Cow<'static,str>> {
                     #verifier
             }
         )
@@ -183,6 +224,8 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
                 ::std::borrow::Cow::Borrowed(#export_string)
             }
             #type_script_guard
+            #type_script_enum_factory
+            #type_script_enum_handlers
         }
 
     };
@@ -192,46 +235,155 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
 
     ret
 }
-struct Typescriptify {
-    ctxt: ParseContext<'static>,
-    body: QuoteMaker,
+
+/* #endregion helpers */
+
+pub(crate) struct Typescriptify {
+    ident: syn::Ident,
+    generics: syn::Generics,
+    /// quoted identifier { obj }
+    arg_name: QuoteT,
+    input: DeriveInput,
 }
+
+// impl Drop for Typescriptify {
+//     fn drop(&mut self) {
+//         use std::thread;
+//         if !thread::panicking() {
+//             // must check errors
+//             self.serde_ctxt.take().unwrap().check().unwrap();
+//         }
+//     }
+// }
+
 impl Typescriptify {
-    fn wasm_string(&self) -> String {
-        if self.body.is_enum {
-            format!(
-                "{}export enum {} {};",
-                self.ctxt.global_attrs.to_comment_str(),
-                self.ts_ident_str(),
-                self.ts_body_str()
-            )
-        } else {
-            format!(
-                "{}export type {} = {};",
-                self.ctxt.global_attrs.to_comment_str(),
-                self.ts_ident_str(),
-                self.ts_body_str()
-            )
+    pub fn new(input: QuoteT) -> Self {
+        let input: DeriveInput = syn::parse2(input).unwrap();
+
+        let cx = Ctxt::new();
+
+        let mut attrs = attrs::Attrs::new();
+        attrs.push_doc_comment(&input.attrs);
+        attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
+
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
+        // let ts_generics = ts_generics(container.generics);
+
+        // let pctxt = ParseContext {
+        //     ctxt: Some(cx),
+        //     arg_name: quote!(obj),
+        //     global_attrs: attrs,
+        //     gen_guard: gv,
+        //     ident: container.ident.clone(),
+        //     ts_generics,
+        //     rust_generics: container.generics.clone(),
+        //     extra: RefCell::new(vec![]),
+        // };
+
+        // must track this in case of errors so we can check them
+        // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
+        cx.check().unwrap();
+
+        return Self {
+            arg_name: quote!(obj),
+            generics: container.generics.clone(),
+            ident: container.ident.clone(),
+            input,
+        };
+    }
+
+    pub fn parse_body(&self) -> QuoteMaker {
+        let TSOutput { q_maker, .. } = self.parse(false);
+        q_maker
+    }
+
+    pub fn parse_verify(&self) -> Option<VerifySourceResult> {
+        let tsout = self.parse(true);
+        let statements = tsout.pctxt.extra.borrow();
+
+        let TSOutput { q_maker, .. } = self.parse(true);
+
+        q_maker.verify.map(|verifier| VerifySourceResult {
+            body: verifier,
+            extra_source: statements
+                .iter()
+                .map(|extra| {
+                    let e = extra.to_string();
+
+                    let extra = patch(&e);
+                    "// generic test  \n".to_string() + &extra
+                })
+                .collect(),
+        })
+    }
+
+    fn parse(&self, gen_verifier: bool) -> TSOutput {
+        let input = &self.input;
+        let cx = Ctxt::new();
+        let mut attrs = attrs::Attrs::new();
+        attrs.push_doc_comment(&input.attrs);
+        attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
+
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
+        let ts_generics = ts_generics(&container.generics);
+        let gv = gen_verifier && attrs.guard;
+
+        let (typescript, pctxt) = {
+            let pctxt = ParseContext {
+                ctxt: Some(cx),
+                arg_name: quote!(obj),
+                global_attrs: attrs,
+                gen_guard: gv,
+                ident: container.ident.clone(),
+                ts_generics,
+                extra: RefCell::new(vec![]),
+            };
+
+            let typescript = match container.data {
+                ast::Data::Enum(ref variants) => pctxt.derive_enum(variants, &container),
+                ast::Data::Struct(style, ref fields) => {
+                    pctxt.derive_struct(style, fields, &container)
+                }
+            };
+
+            // erase serde context
+            (typescript, pctxt)
+        };
+
+        TSOutput {
+            ident: patch(&container.ident.clone().to_string()).into(),
+            pctxt: pctxt,
+            q_maker: typescript,
         }
     }
-    fn wasm_verify(&self) -> Option<String> {
-        match self.body.verify {
+}
+
+struct VerifySourceResult {
+    body: QuoteT,
+    extra_source: Vec<String>,
+}
+
+impl Typescriptify {
+    /* #region verify-and-ts-help */
+
+    fn verify_source(&self) -> Option<String> {
+        match self.parse_verify() {
             None => None,
-            Some(ref body) => {
+            Some(ref result) => {
                 let mut s = {
-                    let ident = &self.ctxt.ident;
-                    let obj = &self.ctxt.arg_name;
-                    let body = body.to_string();
+                    let ident = &self.ident;
+                    let obj = &self.arg_name;
+                    let body = result.body.to_string();
                     let body = patch(&body);
 
                     let generics = self.ts_generics(false);
                     let generics_wb = &generics; // self.ts_generics(true);
-                    let is_generic = !self.ctxt.ts_generics.is_empty();
+                    let is_generic = !ts_generics(&self.generics).is_empty();
                     let name = guard_name(&ident);
                     if is_generic {
                         format!(
                             "export const {name} = {generics_wb}({obj}: any, typename: string): \
-                             {obj} is {ident}{generics} => {body}",
+                                 {obj} is {ident}{generics} => {body}",
                             name = name,
                             obj = obj,
                             body = body,
@@ -242,7 +394,7 @@ impl Typescriptify {
                     } else {
                         format!(
                             "export const {name} = {generics_wb}({obj}: any): \
-                             {obj} is {ident}{generics} => {body}",
+                                 {obj} is {ident}{generics} => {body}",
                             name = name,
                             obj = obj,
                             body = body,
@@ -252,7 +404,7 @@ impl Typescriptify {
                         )
                     }
                 };
-                for txt in self.extra_verify() {
+                for txt in &result.extra_source {
                     s.push('\n');
                     s.push_str(&txt);
                 }
@@ -260,105 +412,77 @@ impl Typescriptify {
             }
         }
     }
-    fn extra_verify(&self) -> Vec<String> {
-        let v = self.ctxt.extra.borrow();
-        v.iter()
-            .map(|extra| {
-                let e = extra.to_string();
-
-                let extra = patch(&e);
-                "// generic test  \n".to_string() + &extra
-            })
-            .collect()
-    }
 
     fn ts_ident_str(&self) -> String {
         let ts_ident = self.ts_ident().to_string();
         patch(&ts_ident).into()
     }
-    fn ts_body_str(&self) -> String {
-        let ts = self.body.body.to_string();
-        let ts = patch(&ts);
-        ts.into()
-    }
+
+    // fn ts_body_str(&self) -> String {
+    //     let ts = self.parse().body.to_string();
+    //     let ts = patch(&ts);
+    //     ts.into()
+    // }
+
     fn ts_generics(&self, with_bound: bool) -> QuoteT {
-        let args_wo_lt: Vec<_> = self.ts_generic_args_wo_lifetimes(with_bound).collect();
+        let args_wo_lt = self.ts_generic_args_wo_lifetimes(with_bound);
         if args_wo_lt.is_empty() {
             quote!()
         } else {
             quote!(<#(#args_wo_lt),*>)
         }
     }
+
     /// type name suitable for typescript i.e. *no* 'a lifetimes
     fn ts_ident(&self) -> QuoteT {
-        let ident = &self.ctxt.ident;
+        let ident = &self.ident;
         let generics = self.ts_generics(false);
         quote!(#ident#generics)
     }
 
-    fn ts_generic_args_wo_lifetimes(&self, with_bounds: bool) -> impl Iterator<Item = QuoteT> + '_ {
-        self.ctxt.ts_generics.iter().filter_map(move |g| match g {
-            Some((ref ident, ref bounds)) => {
-                // we ignore trait bounds for typescript
-                if bounds.is_empty() || !with_bounds {
-                    Some(quote! (#ident))
-                } else {
-                    let bounds = bounds.iter().map(|ts| &ts.ident);
-                    Some(quote! { #ident extends #(#bounds)&* })
+    fn ts_generic_args_wo_lifetimes(&self, with_bounds: bool) -> Vec<QuoteT> {
+        ts_generics(&self.generics)
+            .iter()
+            .filter_map(move |g| match g {
+                Some((ref ident, ref bounds)) => {
+                    // we ignore trait bounds for typescript
+                    if bounds.is_empty() || !with_bounds {
+                        Some(quote! (#ident))
+                    } else {
+                        let bounds = bounds.iter().map(|ts| &ts.ident);
+                        Some(quote! { #ident extends #(#bounds)&* })
+                    }
                 }
-            }
 
-            None => None,
-        })
+                None => None,
+            })
+            .collect()
     }
+    /* #endregion verify-and-ts-help */
+}
 
-    fn parse(gen_verifier: bool, input: QuoteT) -> Self {
-        let input: DeriveInput = syn::parse2(input).unwrap();
+struct TSOutput {
+    ident: String,
+    pctxt: ParseContext,
+    q_maker: QuoteMaker,
+}
 
-        let cx = Ctxt::new();
-        let mut attrs = attrs::Attrs::new();
-        attrs.push_doc_comment(&input.attrs);
-        attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
-
-        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
-        let ts_generics = ts_generics(container.generics);
-        let gv = gen_verifier && attrs.guard;
-
-        let (typescript, ctxt) = {
-            let pctxt = ParseContext {
-                ctxt: Some(&cx),
-                arg_name: quote!(obj),
-                global_attrs: attrs,
-                gen_guard: gv,
-                ident: container.ident.clone(),
-                ts_generics,
-                rust_generics: container.generics.clone(),
-                extra: RefCell::new(vec![]),
-            };
-
-            let typescript = match container.data {
-                ast::Data::Enum(ref variants) => pctxt.derive_enum(variants, &container),
-                ast::Data::Struct(style, ref fields) => {
-                    pctxt.derive_struct(style, fields, &container)
-                }
-            };
-            // erase serde context
-            (
-                typescript,
-                ParseContext {
-                    ctxt: None,
-                    ..pctxt
-                },
+impl TSOutput {
+    fn export_type_definition_source(&self) -> String {
+        if let QuoteMakerKind::Union { .. } = self.q_maker.kind {
+            format!(
+                "{}export enum {} {};",
+                self.pctxt.global_attrs.to_comment_str(),
+                self.ident,
+                patch(&self.q_maker.source.to_string())
             )
-        };
-
-        // consumes context panics with errors
-        if let Err(m) = cx.check() {
-            panic!(m);
-        }
-        Self {
-            ctxt,
-            body: typescript,
+        } else {
+            format!(
+                "{}export type {} = {};",
+                self.pctxt.global_attrs.to_comment_str(),
+                self.ident,
+                patch(&self.q_maker.source.to_string())
+            )
         }
     }
 }
@@ -415,11 +539,13 @@ struct TSType {
     path: Vec<syn::Ident>,          // full path
     return_type: Option<syn::Type>, // only if function
 }
+
 impl TSType {
     fn path(&self) -> Vec<String> {
         self.path.iter().map(|i| i.to_string()).collect() // hold the memory
     }
 }
+
 fn last_path_element(path: &syn::Path) -> Option<TSType> {
     let fullpath = path
         .segments
@@ -476,9 +602,9 @@ fn last_path_element(path: &syn::Path) -> Option<TSType> {
 }
 
 pub(crate) struct FieldContext<'a> {
-    pub ctxt: &'a ParseContext<'a>, // global parse context
-    pub field: &'a ast::Field<'a>,  // field being parsed
-    pub attrs: Attrs,               // field attributes
+    pub ctxt: &'a ParseContext,    // global parse context
+    pub field: &'a ast::Field<'a>, // field being parsed
+    pub attrs: Attrs,              // field attributes
 }
 
 impl<'a> FieldContext<'a> {
@@ -492,30 +618,52 @@ impl<'a> FieldContext<'a> {
     }
 }
 
-pub(crate) struct ParseContext<'a> {
-    ctxt: Option<&'a Ctxt>, // serde parse context for error reporting
-    arg_name: QuoteT,       // top level "name" of argument for verifier
-    global_attrs: Attrs,    // global #[ts(...)] attributes
-    gen_guard: bool,        // generate type guard for this struct/enum
-    ident: syn::Ident,      // name of enum struct
+pub(crate) struct FactoryOptions {
+    pub factory_identifier: Option<String>,
+}
+
+pub(crate) struct HandlerOptions {
+    pub handler_identifier: Option<String>,
+    /// TypeScript return type defaults to "any"
+    pub return_type: Option<String>,
+}
+
+pub(crate) struct ParseContext {
+    ctxt: Option<Ctxt>,  // serde parse context for error reporting
+    arg_name: QuoteT,    // top level "name" of argument for verifier
+    global_attrs: Attrs, // global #[ts(...)] attributes
+    gen_guard: bool,     // generate type guard for this struct/enum
+    ident: syn::Ident,   // name of enum struct
     ts_generics: Vec<Option<(Ident, Bounds)>>, // None means a lifetime parameter
-    rust_generics: syn::Generics, // original rust generics
     extra: RefCell<Vec<QuoteT>>, // for generic verifier hack!
 }
 
-impl<'a> ParseContext<'a> {
+impl Drop for ParseContext {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            // must track this in case of errors so we can check them
+            // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
+            if let Some(ctxt) = self.ctxt.take() {
+                ctxt.check().expect("no errors")
+            }
+        }
+    }
+}
+
+impl<'a> ParseContext {
     // Some helpers
 
     fn err_msg(&self, msg: &str) {
-        if let Some(ctxt) = self.ctxt {
+        if let Some(ref ctxt) = self.ctxt {
             ctxt.error(msg);
         } else {
             panic!(msg.to_string())
         }
     }
 
+    /// returns { #ty } of
     fn field_to_ts(&self, field: &ast::Field<'a>) -> QuoteT {
-        let attrs = Attrs::from_field(field, self.ctxt);
+        let attrs = Attrs::from_field(field, self.ctxt.as_ref());
         // if user has provided a type ... use that
         if attrs.ts_type.is_some() {
             use std::str::FromStr;
@@ -541,6 +689,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    /// returns { #field_name: #ty }
     fn derive_field(&self, field: &ast::Field<'a>) -> QuoteT {
         let field_name = field.attrs.name().serialize_name(); // use serde name instead of field.member
         let field_name = ident_from_str(&field_name);

@@ -6,24 +6,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 use super::patch::{eq, nl};
-use super::{filter_visible, ident_from_str, ParseContext, QuoteMaker};
+use super::{filter_visible, ident_from_str, ParseContext, QuoteMaker, QuoteMakerKind};
 use proc_macro2::Literal;
 use quote::quote;
 use serde_derive_internals::{ast, ast::Variant, attr::EnumTag};
 const CONTENT: &str = "fields"; // default content tag
                                 // const TAG: &'static str = "kind"; // default tag tag
-
 struct TagInfo<'a> {
     tag: Option<&'a str>,
     content: Option<&'a str>,
     untagged: bool,
 }
-impl<'a> ParseContext<'_> {
+impl<'a> ParseContext {
     pub(crate) fn derive_enum(
         &self,
         variants: &[ast::Variant<'a>],
         ast_container: &ast::Container,
     ) -> QuoteMaker {
+        // https://serde.rs/enum-representations.html
         let taginfo = match ast_container.attrs.tag() {
             EnumTag::Internal { tag, .. } => TagInfo {
                 tag: Some(tag),
@@ -87,10 +87,25 @@ impl<'a> ParseContext<'_> {
             } else {
                 None
             };
+
+            // let enum_factory = if self.gen_factory {
+            //     Some(quote!(
+            //         {
+
+            //         }
+            //     ))
+            // } else {
+            //     None
+            // };
+
+            // enum_handler: None,
             return QuoteMaker {
-                body: quote! ( { #(#k = #v),* } ),
+                source: quote! ( { #(#k = #v),* } ),
                 verify,
-                is_enum: true,
+                kind: QuoteMakerKind::Union {
+                    enum_factory: None,
+                    enum_handler: None,
+                },
             };
         }
 
@@ -109,7 +124,7 @@ impl<'a> ParseContext<'_> {
             .collect::<Vec<_>>();
         // OK generate A | B | C etc
         let newl = nl();
-        let body = content.iter().map(|q| q.body.clone());
+        let body = content.iter().map(|q| q.source.clone());
         let nl = content.iter().map(|_| quote!(#newl));
         let verify = if self.gen_guard {
             let v = content.iter().map(|q| q.verify.clone().unwrap());
@@ -129,9 +144,9 @@ impl<'a> ParseContext<'_> {
             None
         };
         QuoteMaker {
-            body: quote! ( #( #nl | #body)* ),
+            source: quote! ( #( #nl | #body)* ),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
     fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> QuoteMaker {
@@ -150,9 +165,9 @@ impl<'a> ParseContext<'_> {
                 None
             };
             return QuoteMaker {
-                body: quote!(#variant_name),
+                source: quote!(#variant_name),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             };
         }
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -167,11 +182,11 @@ impl<'a> ParseContext<'_> {
             None
         };
         QuoteMaker {
-            body: quote! (
+            source: quote! (
                 { #tag: #variant_name }
             ),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 
@@ -198,9 +213,9 @@ impl<'a> ParseContext<'_> {
                     None
                 };
                 return QuoteMaker {
-                    body: quote! ( #ty ),
+                    source: quote! ( #ty ),
                     verify,
-                    is_enum: false,
+                    kind: QuoteMakerKind::Object,
                 };
             };
             let tag = ident_from_str(&variant_name);
@@ -223,12 +238,12 @@ impl<'a> ParseContext<'_> {
                 None
             };
             return QuoteMaker {
-                body: quote! (
+                source: quote! (
                     { #tag : #ty }
 
                 ),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             };
         };
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -254,11 +269,11 @@ impl<'a> ParseContext<'_> {
             None
         };
         QuoteMaker {
-            body: quote! (
+            source: quote! (
                 { #tag: #variant_name; #content: #ty }
             ),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 
@@ -297,11 +312,11 @@ impl<'a> ParseContext<'_> {
                     None
                 };
                 return QuoteMaker {
-                    body: quote! (
+                    source: quote! (
                         { #(#contents);* }
                     ),
                     verify,
-                    is_enum: false,
+                    kind: QuoteMakerKind::Object,
                 };
             };
             let v = &quote!(v);
@@ -321,11 +336,11 @@ impl<'a> ParseContext<'_> {
                 None
             };
             return QuoteMaker {
-                body: quote! (
+                source: quote! (
                     { #tag : { #(#contents);* }  }
                 ),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             };
         }
         let tag_str = taginfo.tag.unwrap();
@@ -352,12 +367,12 @@ impl<'a> ParseContext<'_> {
                 None
             };
             QuoteMaker {
-                body: quote! (
+                source: quote! (
                     { #tag: #variant_name; #content: { #(#contents);* } }
 
                 ),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             }
         } else {
             if let Some(ref cx) = self.ctxt {
@@ -388,11 +403,11 @@ impl<'a> ParseContext<'_> {
                 None
             };
             QuoteMaker {
-                body: quote! (
+                source: quote! (
                     { #tag: #variant_name; #(#contents);* }
                 ),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             }
         }
     }
@@ -429,11 +444,11 @@ impl<'a> ParseContext<'_> {
                     None
                 };
                 return QuoteMaker {
-                    body: quote! (
+                    source: quote! (
                      [ #(#contents),* ]
                     ),
                     verify,
-                    is_enum: false,
+                    kind: QuoteMakerKind::Object,
                 };
             }
             let tag = ident_from_str(&variant_name);
@@ -453,12 +468,12 @@ impl<'a> ParseContext<'_> {
                 None
             };
             return QuoteMaker {
-                body: quote! (
+                source: quote! (
                  { #tag : [ #(#contents),* ] }
 
                 ),
                 verify,
-                is_enum: false,
+                kind: QuoteMakerKind::Object,
             };
         };
 
@@ -486,11 +501,11 @@ impl<'a> ParseContext<'_> {
             None
         };
         QuoteMaker {
-            body: quote! (
+            source: quote! (
             { #tag: #variant_name; #content : [ #(#contents),* ] }
             ),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 }

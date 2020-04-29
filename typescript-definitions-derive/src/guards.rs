@@ -288,9 +288,9 @@ impl<'a> FieldContext<'a> {
     }
 }
 
-impl<'a> ParseContext<'a> {
+impl<'a> ParseContext {
     pub fn verify_type(&'a self, obj: &'a TokenStream, field: &'a ast::Field<'a>) -> QuoteT {
-        let attrs = Attrs::from_field(field, self.ctxt);
+        let attrs = Attrs::from_field(field, self.ctxt.as_ref());
         let verify = FieldContext {
             attrs,
             field,
@@ -299,7 +299,7 @@ impl<'a> ParseContext<'a> {
         verify.verify_single_type(obj)
     }
     pub fn verify_field(&'a self, obj: &'a TokenStream, field: &'a ast::Field<'a>) -> QuoteT {
-        let attrs = Attrs::from_field(field, self.ctxt);
+        let attrs = Attrs::from_field(field, self.ctxt.as_ref());
 
         let verify = FieldContext {
             attrs,

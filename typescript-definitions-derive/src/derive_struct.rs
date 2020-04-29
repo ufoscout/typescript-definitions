@@ -10,9 +10,9 @@ use proc_macro2::Literal;
 use quote::quote;
 use serde_derive_internals::ast;
 
-use super::{filter_visible, patch::eq, patch::nl, ParseContext, QuoteMaker};
+use super::{filter_visible, patch::eq, patch::nl, ParseContext, QuoteMaker, QuoteMakerKind};
 
-impl<'a> ParseContext<'_> {
+impl<'a> ParseContext {
     pub(crate) fn derive_struct(
         &self,
         style: ast::Style,
@@ -45,9 +45,9 @@ impl<'a> ParseContext<'_> {
         };
 
         QuoteMaker {
-            body: self.field_to_ts(field),
+            source: self.field_to_ts(field),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 
@@ -59,9 +59,9 @@ impl<'a> ParseContext<'_> {
             None
         };
         QuoteMaker {
-            body: quote!({}),
+            source: quote!({}),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 
@@ -93,9 +93,9 @@ impl<'a> ParseContext<'_> {
         };
 
         QuoteMaker {
-            body: quote!({ #(#content);* }),
+            source: quote!({ #(#content);* }),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 
@@ -131,9 +131,9 @@ impl<'a> ParseContext<'_> {
         };
 
         QuoteMaker {
-            body: quote!([#(#content),*]),
+            source: quote!([#(#content),*]),
             verify,
-            is_enum: false,
+            kind: QuoteMakerKind::Object,
         }
     }
 }

@@ -35,4 +35,6 @@ insta = "0.6.2"
 export-typescript = []
 test = []
 type-guards = []
+type-enum-factories = []
+type-enum-handlers = []
 syn-extra-traits = ["syn/extra-traits"]
