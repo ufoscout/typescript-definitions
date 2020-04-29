@@ -49,6 +49,7 @@ struct QuoteMaker {
 
 enum QuoteMakerKind {
     Object,
+    Enum,
     Union {
         /// enum factory quote token stream
         enum_factory: Option<QuoteT>,
@@ -246,16 +247,6 @@ pub(crate) struct Typescriptify {
     input: DeriveInput,
 }
 
-// impl Drop for Typescriptify {
-//     fn drop(&mut self) {
-//         use std::thread;
-//         if !thread::panicking() {
-//             // must check errors
-//             self.serde_ctxt.take().unwrap().check().unwrap();
-//         }
-//     }
-// }
-
 impl Typescriptify {
     pub fn new(input: QuoteT) -> Self {
         let input: DeriveInput = syn::parse2(input).unwrap();
@@ -267,18 +258,6 @@ impl Typescriptify {
         attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
 
         let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
-        // let ts_generics = ts_generics(container.generics);
-
-        // let pctxt = ParseContext {
-        //     ctxt: Some(cx),
-        //     arg_name: quote!(obj),
-        //     global_attrs: attrs,
-        //     gen_guard: gv,
-        //     ident: container.ident.clone(),
-        //     ts_generics,
-        //     rust_generics: container.generics.clone(),
-        //     extra: RefCell::new(vec![]),
-        // };
 
         // must track this in case of errors so we can check them
         // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
@@ -451,7 +430,7 @@ struct TSOutput {
 
 impl TSOutput {
     fn export_type_handler_source(&self) -> Option<String> {
-        if let QuoteMakerKind::Union { .. } = self.q_maker.kind {
+        if let QuoteMakerKind::Enum = self.q_maker.kind {
             Some(format!(
                 "{}export enum {} {};",
                 self.pctxt.global_attrs.to_comment_str(),
@@ -464,7 +443,7 @@ impl TSOutput {
     }
 
     fn export_type_definition_source(&self) -> String {
-        if let QuoteMakerKind::Union { .. } = self.q_maker.kind {
+        if let QuoteMakerKind::Enum = self.q_maker.kind {
             format!(
                 "{}export enum {} {};",
                 self.pctxt.global_attrs.to_comment_str(),

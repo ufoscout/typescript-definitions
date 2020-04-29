@@ -13,18 +13,16 @@ use serde_derive_internals::{ast, ast::Variant, attr::EnumTag};
 const CONTENT: &str = "fields"; // default content tag
                                 // const TAG: &'static str = "kind"; // default tag tag
 struct TagInfo<'a> {
+    /// #[serde(tag = "...")]
     tag: Option<&'a str>,
+    /// #[serde(content = "...")]
     content: Option<&'a str>,
+    /// flattened without tag `{ "key1": "", "key2": "" }`
     untagged: bool,
 }
-impl<'a> ParseContext {
-    pub(crate) fn derive_enum(
-        &self,
-        variants: &[ast::Variant<'a>],
-        ast_container: &ast::Container,
-    ) -> QuoteMaker {
-        // https://serde.rs/enum-representations.html
-        let taginfo = match ast_container.attrs.tag() {
+impl<'a> TagInfo<'a> {
+    fn from_enum(e: &'a EnumTag) -> Self {
+        match e {
             EnumTag::Internal { tag, .. } => TagInfo {
                 tag: Some(tag),
                 content: None,
@@ -45,32 +43,34 @@ impl<'a> ParseContext {
                 content: None,
                 untagged: true,
             },
-        };
-
-        // check for #[serde(skip)]
-        let mut skip_variants: Vec<&ast::Variant<'a>> = Vec::with_capacity(variants.len());
-        for v in variants {
-            if v.attrs.skip_serializing() {
-                continue;
-            }
-            skip_variants.push(v);
         }
+    }
+}
 
-        let mut is_enum = true;
-        for v in &skip_variants {
-            match v.style {
-                ast::Style::Unit => continue,
-                _ => {
-                    is_enum = false;
-                    break;
-                }
-            }
-        }
+impl<'a> ParseContext {
+    pub(crate) fn derive_enum(
+        &self,
+        variants: &[ast::Variant<'a>],
+        ast_container: &ast::Container,
+    ) -> QuoteMaker {
+        // https://serde.rs/enum-representations.html
+        let taginfo = TagInfo::from_enum(ast_container.attrs.tag());
+
+        // remove skipped ( check for #[serde(skip)] )
+        let variants: Vec<&ast::Variant<'a>> = variants
+            .into_iter()
+            .filter(|v| !v.attrs.skip_serializing())
+            .collect();
+
+        // is typescript enum compatible
+        let is_enum = variants.iter().all(|v| matches!(v.style, ast::Style::Unit));
+
         if is_enum {
-            let v = &skip_variants
-                .iter()
+            let v = &variants
+                .into_iter()
                 .map(|v| v.attrs.name().serialize_name()) // use serde name instead of v.ident
                 .collect::<Vec<_>>();
+
             let k = v.iter().map(|v| ident_from_str(&v)).collect::<Vec<_>>();
             let verify = if self.gen_guard {
                 let obj = &self.arg_name;
@@ -88,28 +88,14 @@ impl<'a> ParseContext {
                 None
             };
 
-            // let enum_factory = if self.gen_factory {
-            //     Some(quote!(
-            //         {
-
-            //         }
-            //     ))
-            // } else {
-            //     None
-            // };
-
-            // enum_handler: None,
             return QuoteMaker {
                 source: quote! ( { #(#k = #v),* } ),
                 verify,
-                kind: QuoteMakerKind::Union {
-                    enum_factory: None,
-                    enum_handler: None,
-                },
+                kind: QuoteMakerKind::Enum,
             };
         }
 
-        let content = skip_variants
+        let content = variants
             .iter()
             .map(|variant| match variant.style {
                 ast::Style::Struct => {
@@ -122,6 +108,7 @@ impl<'a> ParseContext {
                 ast::Style::Unit => self.derive_unit_variant(&taginfo, variant),
             })
             .collect::<Vec<_>>();
+
         // OK generate A | B | C etc
         let newl = nl();
         let body = content.iter().map(|q| q.source.clone());
@@ -143,10 +130,14 @@ impl<'a> ParseContext {
         } else {
             None
         };
+
         QuoteMaker {
             source: quote! ( #( #nl | #body)* ),
             verify,
-            kind: QuoteMakerKind::Object,
+            kind: QuoteMakerKind::Union {
+                enum_factory: None,
+                enum_handler: None,
+            },
         }
     }
     fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> QuoteMaker {
