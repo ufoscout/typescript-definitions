@@ -336,6 +336,6 @@ impl<'a> ParseContext {
     }
 
     fn add_extra_guard(&'a self, tokens: QuoteT) {
-        self.extra.borrow_mut().push(tokens);
+        self.extra_guard.borrow_mut().push(tokens);
     }
 }

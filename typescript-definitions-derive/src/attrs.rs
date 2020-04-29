@@ -12,12 +12,16 @@ use quote::quote;
 use proc_macro2::TokenStream;
 use syn::{Attribute, Ident, Lit, Meta, /* MetaList,*/ MetaNameValue, NestedMeta};
 
-#[cfg_attr(feature = "syn-extra-traits", derive(Debug))]
+#[derive(Debug)]
 pub struct Attrs {
-    pub comments: Vec<String>,
+    /// list of blocks of " * " prefixed comment lines
+    comments: Vec<String>,
     pub guard: bool,
     pub only_first: bool,
     pub ts_type: Option<String>,
+    pub ts_handler_name: Option<String>,
+    pub ts_handler_return: Option<String>,
+    pub ts_factory_name: Option<String>,
     pub ts_guard: Option<String>,
     pub ts_as: Option<syn::Type>,
 }
@@ -47,6 +51,9 @@ impl Attrs {
             only_first: false,
             ts_type: None,
             ts_guard: None,
+            ts_handler_name: None,
+            ts_handler_return: None,
+            ts_factory_name: None,
             ts_as: None, // isa: HashMap::new(),
         }
     }
@@ -95,7 +102,7 @@ impl Attrs {
 
         let merged_lines = doc_comments
             .iter()
-            .map(|s| format!("// {}", s))
+            .map(|s| format!(" * {}", s))
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -106,9 +113,10 @@ impl Attrs {
         if self.comments.is_empty() {
             String::default()
         } else {
-            self.comments.join("\n") + "\n" // <-- need better way!
+            format!("/**\n{}\n */\n", self.comments.join("\n *\n"))
         }
     }
+
     fn err_msg<'a>(&self, msg: String, ctxt: Option<&'a Ctxt>) {
         if let Some(ctxt) = ctxt {
             ctxt.error(msg);
@@ -166,6 +174,7 @@ impl Attrs {
 
         for attr in Self::find_typescript(&attrs, ctxt) {
             match attr {
+                // #[ts(guard = true)]
                 NameValue(MetaNameValue {
                     ref ident,
                     lit: Bool(ref value),
@@ -173,6 +182,7 @@ impl Attrs {
                 }) if ident == "guard" => {
                     self.guard = value.value;
                 }
+                // #[ts(guard = "true")]
                 NameValue(MetaNameValue {
                     ref ident,
                     lit: Str(ref value),
@@ -193,6 +203,25 @@ impl Attrs {
                         }
                     }
                 }
+                // #[ts(handler_name = "HandleFooBar")]
+                NameValue(MetaNameValue {
+                    ref ident,
+                    lit: Str(ref value),
+                    ..
+                }) if ident == "handler_name" => self.ts_handler_name = Some(value.value()),
+                // #[ts(handler_return = "boolean")]
+                NameValue(MetaNameValue {
+                    ref ident,
+                    lit: Str(ref value),
+                    ..
+                }) if ident == "handler_return" => self.ts_handler_return = Some(value.value()),
+                // #[ts(factory_name = "FooBar")]
+                NameValue(MetaNameValue {
+                    ref ident,
+                    lit: Str(ref value),
+                    ..
+                }) if ident == "factory_name" => self.ts_factory_name = Some(value.value()),
+                // #[ts(guard)]
                 Word(ref w) if w == "guard" => self.guard = true,
                 // List(MetaList {
                 //     ref ident,

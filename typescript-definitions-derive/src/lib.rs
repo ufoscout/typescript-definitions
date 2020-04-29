@@ -196,7 +196,7 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
             None => quote!(None),
         };
         quote!(
-            fn type_script_enum_factory(name: Option<String>) -> Option<::std::borrow::Cow<'static,str>> {
+            fn type_script_enum_factory() -> Option<::std::borrow::Cow<'static,str>> {
                     #verifier
             }
         )
@@ -210,7 +210,7 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
             None => quote!(None),
         };
         quote!(
-            fn type_script_enum_handlers(name: Option<String>, return_type: Option<String>) -> Option<::std::borrow::Cow<'static,str>> {
+            fn type_script_enum_handlers() -> Option<::std::borrow::Cow<'static,str>> {
                     #verifier
             }
         )
@@ -292,14 +292,9 @@ impl Typescriptify {
         };
     }
 
-    pub fn parse_body(&self) -> QuoteMaker {
-        let TSOutput { q_maker, .. } = self.parse(false);
-        q_maker
-    }
-
     pub fn parse_verify(&self) -> Option<VerifySourceResult> {
         let tsout = self.parse(true);
-        let statements = tsout.pctxt.extra.borrow();
+        let statements = tsout.pctxt.extra_guard.borrow();
 
         let TSOutput { q_maker, .. } = self.parse(true);
 
@@ -320,9 +315,14 @@ impl Typescriptify {
     fn parse(&self, gen_verifier: bool) -> TSOutput {
         let input = &self.input;
         let cx = Ctxt::new();
-        let mut attrs = attrs::Attrs::new();
-        attrs.push_doc_comment(&input.attrs);
-        attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
+
+        // collect and check #[ts(...attrs)]
+        let attrs = {
+            let mut attrs = attrs::Attrs::new();
+            attrs.push_doc_comment(&input.attrs);
+            attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
+            attrs
+        };
 
         let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
         let ts_generics = ts_generics(&container.generics);
@@ -336,7 +336,7 @@ impl Typescriptify {
                 gen_guard: gv,
                 ident: container.ident.clone(),
                 ts_generics,
-                extra: RefCell::new(vec![]),
+                extra_guard: RefCell::new(vec![]),
             };
 
             let typescript = match container.data {
@@ -413,17 +413,6 @@ impl Typescriptify {
         }
     }
 
-    fn ts_ident_str(&self) -> String {
-        let ts_ident = self.ts_ident().to_string();
-        patch(&ts_ident).into()
-    }
-
-    // fn ts_body_str(&self) -> String {
-    //     let ts = self.parse().body.to_string();
-    //     let ts = patch(&ts);
-    //     ts.into()
-    // }
-
     fn ts_generics(&self, with_bound: bool) -> QuoteT {
         let args_wo_lt = self.ts_generic_args_wo_lifetimes(with_bound);
         if args_wo_lt.is_empty() {
@@ -431,13 +420,6 @@ impl Typescriptify {
         } else {
             quote!(<#(#args_wo_lt),*>)
         }
-    }
-
-    /// type name suitable for typescript i.e. *no* 'a lifetimes
-    fn ts_ident(&self) -> QuoteT {
-        let ident = &self.ident;
-        let generics = self.ts_generics(false);
-        quote!(#ident#generics)
     }
 
     fn ts_generic_args_wo_lifetimes(&self, with_bounds: bool) -> Vec<QuoteT> {
@@ -468,6 +450,19 @@ struct TSOutput {
 }
 
 impl TSOutput {
+    fn export_type_handler_source(&self) -> Option<String> {
+        if let QuoteMakerKind::Union { .. } = self.q_maker.kind {
+            Some(format!(
+                "{}export enum {} {};",
+                self.pctxt.global_attrs.to_comment_str(),
+                self.ident,
+                patch(&self.q_maker.source.to_string())
+            ))
+        } else {
+            None
+        }
+    }
+
     fn export_type_definition_source(&self) -> String {
         if let QuoteMakerKind::Union { .. } = self.q_maker.kind {
             format!(
@@ -618,16 +613,6 @@ impl<'a> FieldContext<'a> {
     }
 }
 
-pub(crate) struct FactoryOptions {
-    pub factory_identifier: Option<String>,
-}
-
-pub(crate) struct HandlerOptions {
-    pub handler_identifier: Option<String>,
-    /// TypeScript return type defaults to "any"
-    pub return_type: Option<String>,
-}
-
 pub(crate) struct ParseContext {
     ctxt: Option<Ctxt>,  // serde parse context for error reporting
     arg_name: QuoteT,    // top level "name" of argument for verifier
@@ -635,7 +620,7 @@ pub(crate) struct ParseContext {
     gen_guard: bool,     // generate type guard for this struct/enum
     ident: syn::Ident,   // name of enum struct
     ts_generics: Vec<Option<(Ident, Bounds)>>, // None means a lifetime parameter
-    extra: RefCell<Vec<QuoteT>>, // for generic verifier hack!
+    extra_guard: RefCell<Vec<QuoteT>>, // for generic verifier hack!
 }
 
 impl Drop for ParseContext {
