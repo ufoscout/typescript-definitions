@@ -270,9 +270,9 @@ impl<'a> ParseContext {
                 Ok(quote!(export interface #export_interface_1 {
                         #( #newls  #on_tag_name(#args): #ret_type;)*#newl
                     }#newl
-                    export function #apply_ident_1(handler: #export_interface_1, input: #ident_1): #ret_type_1 {#newl
+                    export function #apply_ident_1(handler: #export_interface_1): (input: #ident_1) => #ret_type_1 {#newl
                         #tsignore
-                        return handler[#handle_prefix_dq_1 + input[#tag_key_dq_1]](#access_input_content_1);#newl
+                        return input => handler[#handle_prefix_dq_1 + input[#tag_key_dq_1]](#access_input_content_1);#newl
                     }#newl
                 ))
             });

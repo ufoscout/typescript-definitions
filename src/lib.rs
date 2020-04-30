@@ -79,7 +79,7 @@ pub trait TypeScriptifyTrait {
     ///     B(inner: { bar: number }): void
     /// }
     /// /** Apply deserialized `Foo` object to the handler `FooHandler` and return the handler's result */
-    /// export function applyFoo(outer: Foo, to: FooHandler): void { return to[outer["kind"]](outer["value"]) }
+    /// export function applyFoo(to: FooHandler): (outer: Foo) => void { return outer => to[outer["kind"]](outer["value"]) }
     /// ```
     fn type_script_enum_handlers() -> Result<Cow<'static, str>, &'static str>;
 }
