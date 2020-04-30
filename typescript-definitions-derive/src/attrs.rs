@@ -22,6 +22,7 @@ pub struct Attrs {
     pub ts_handler_name: Option<String>,
     pub ts_handler_return: Option<String>,
     pub ts_factory_name: Option<String>,
+    pub ts_factory_return_name: Option<String>,
     pub ts_guard: Option<String>,
     pub ts_as: Option<syn::Type>,
 }
@@ -54,6 +55,7 @@ impl Attrs {
             ts_handler_name: None,
             ts_handler_return: None,
             ts_factory_name: None,
+            ts_factory_return_name: None,
             ts_as: None, // isa: HashMap::new(),
         }
     }
@@ -221,6 +223,14 @@ impl Attrs {
                     lit: Str(ref value),
                     ..
                 }) if ident == "factory_name" => self.ts_factory_name = Some(value.value()),
+                // #[ts(factory_return_name = "FooBar")]
+                NameValue(MetaNameValue {
+                    ref ident,
+                    lit: Str(ref value),
+                    ..
+                }) if ident == "factory_return_name" => {
+                    self.ts_factory_return_name = Some(value.value())
+                }
                 // #[ts(guard)]
                 Word(ref w) if w == "guard" => self.guard = true,
                 // List(MetaList {

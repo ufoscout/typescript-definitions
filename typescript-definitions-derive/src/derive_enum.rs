@@ -217,10 +217,14 @@ impl<'a> ParseContext {
                         // default naming
                         .unwrap_or(&format!("{}Factory", &type_ident_str)),
                 );
-                let export_factory_type_ident_1 = ident_from_str(
-                    &format!("{}ReturnType", &export_factory_ident_1)
-                );
 
+                let export_factory_type_ident_1 = ident_from_str(
+                    self.global_attrs
+                        .ts_factory_return_name
+                        .as_ref()
+                        // default naming
+                        .unwrap_or(&format!("{}ReturnType", &export_factory_ident_1))
+                );
 
                 let args_copy = args.clone();
                 let tag_name_copy = tag_name.clone();
