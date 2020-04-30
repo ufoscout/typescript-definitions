@@ -17,6 +17,19 @@
 #[macro_use]
 pub extern crate typescript_definitions_derive;
 
+#[macro_export]
+macro_rules! tsy_lines {
+    ($($line:ty;)+) => {{
+        use ::typescript_definitions::TypeScriptifyTrait;
+        use ::std::fmt::Write;
+        let mut tsy_lines = String::new();
+        $({
+            writeln!(&mut tsy_lines, "{}", <$line>::type_script_ify()).unwrap();
+        })+
+        tsy_lines
+    }};
+}
+
 // re-export macros (note pub)
 use serde::ser::Serializer;
 use std::borrow::Cow;
