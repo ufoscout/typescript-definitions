@@ -50,10 +50,10 @@ pub trait TypeScriptifyTrait {
     /// ```
     /// Output
     /// ```typescript
-    /// export const FooFactory = {
-    ///     A(inner: { value: string }) { return { kind: "A", ...inner } }
-    ///     B(inner: { bar: number }) { return { kind: "B", ...inner } }
-    /// }
+    /// export const FooFactory = <R>(fn: (message: Foo) => R) => Object.freeze({
+    ///     A(content: { value: string }): R { return fn({ kind: "A", ...content }) }
+    ///     B(content: { bar: number }): R { return fn({ kind: "B", ...content }) }
+    /// })
     /// ```
     fn type_script_enum_factory() -> Result<Cow<'static, str>, &'static str>;
 
