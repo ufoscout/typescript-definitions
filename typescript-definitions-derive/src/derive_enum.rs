@@ -217,13 +217,23 @@ impl<'a> ParseContext {
                         // default naming
                         .unwrap_or(&format!("{}Factory", &type_ident_str)),
                 );
+                let export_factory_type_ident_1 = ident_from_str(
+                    &format!("{}ReturnType", &export_factory_ident_1)
+                );
 
+
+                let args_copy = args.clone();
+                let tag_name_copy = tag_name.clone();
+                let newls_copy = newls.clone();
                 Ok(
-                    quote!(export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R) => Object.freeze({
+                    quote!(export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R): #export_factory_type_ident_1<R> => Object.freeze({
                             #( #newls  #tag_name(#args): R {
                                 return fn(#ret_constructs)
                             },)*#newl
-                        })#newl
+                        });#newl
+                        export type #export_factory_type_ident_1<R> = {
+                            #( #newls_copy  #tag_name_copy(#args_copy): R;)*#newl
+                        };#newl
                     ),
                 )
             });
