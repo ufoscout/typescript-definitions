@@ -5,11 +5,82 @@ src="https://raw.githubusercontent.com/arabidopsis/typescript-definitions/master
 
 # typescript-definitions
 
-> **Exports serde-serializable structs and enums to Typescript definitions.**
+## Storyscript changelog
 
+### April 2020
+
+ - Significant refactoring in the `typescript-definitions-derive` crate which enable additional typescriptify trait functions
+ - Improved documentation around derive functions
+ - Add two additional typescriptify generators for enum factory, enum handlers, and more to facilitate message passing between WASM to JSON and such.
+
+Example outputs
+```rust
+// https://serde.rs/enum-representations.html
+#[derive(Debug, Serialize, Deserialize, TypeScriptify)]
+#[serde(tag = "r", content = "c")]
+pub enum ToRenderer {
+    /// docs
+    Alert(String),
+    UpdateTitle(String),
+    Doc(super::doc::ToRendererDoc),
+    Pong,
+}
+```
+
+```rust
+// Printing
+    use ::typescript_definitions::TypeScriptifyTrait;
+    println!("{}", ToRenderer::type_script_ify());
+    println!("{}", ToRenderer::type_script_enum_handlers().expect("enum handlers to generate"));
+    println!("{}", ToRenderer::type_script_enum_factory().expect("enum factory to generate"));
+```
+
+```typescript
+export type ToRenderer =
+  | { r: "Alert"; c: string }
+  | { r: "UpdateTitle"; c: string }
+  | { r: "Doc"; c: ToRendererDoc }
+  | { r: "Pong" };
+export interface HandleToRenderer {
+  onAlert(message: string): any;
+  onUpdateTitle(message: string): any;
+  onDoc(message: ToRendererDoc): any;
+  onPong(): any;
+}
+export function applyToRenderer(
+  handler: HandleToRenderer,
+  input: ToRenderer
+): any {
+  //@ts-ignore
+  return handler["on" + input["r"]](input["c"]);
+}
+
+export const ToRendererFactory = <R>(fn: (message: ToRenderer) => R) =>
+  Object.freeze({
+    Alert(content: string): R {
+      return fn({ r: "Alert", c: content });
+    },
+    UpdateTitle(content: string): R {
+      return fn({ r: "UpdateTitle", c: content });
+    },
+    Doc(content: ToRendererDoc): R {
+      return fn({ r: "Doc", c: content });
+    },
+    Pong(): R {
+      return fn({ r: "Pong" });
+    },
+  });
+
+```
+
+## Original Readme
+    
+
+> **Exports serde-serializable structs and enums to Typescript definitions.**
+<!-- 
 [![](https://img.shields.io/crates/v/typescript-definitions.svg)](https://crates.io/crates/typescript-definitions)
 [![](https://docs.rs/typescript-definitions/badge.svg)](https://docs.rs/typescript-definitions)
-![License](https://img.shields.io/crates/l/typescript-definitions.svg)
+![License](https://img.shields.io/crates/l/typescript-definitions.svg) -->
 
 
 **Good news everyone!** Version 0.1.10 introduces a feature gated option to

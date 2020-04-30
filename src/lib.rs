@@ -22,10 +22,6 @@ use serde::ser::Serializer;
 use std::borrow::Cow;
 pub use typescript_definitions_derive::*;
 
-// just for doc tests
-#[allow(unused, non_snake_case)]
-pub mod README;
-
 /// # Trait implemented by `TypeScriptify` derive macro.
 ///
 /// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions)
@@ -59,7 +55,7 @@ pub trait TypeScriptifyTrait {
     ///     B(inner: { bar: number }) { return { kind: "B", ...inner } }
     /// }
     /// ```
-    fn type_script_enum_factory() -> Option<Cow<'static, str>>;
+    fn type_script_enum_factory() -> Result<Cow<'static, str>, &'static str>;
 
     #[cfg(feature = "type-enum-handlers")]
     /// Available with `--features="type-enum-handlers"`
@@ -85,7 +81,7 @@ pub trait TypeScriptifyTrait {
     /// /** Apply deserialized `Foo` object to the handler `FooHandler` and return the handler's result */
     /// export function applyFoo(outer: Foo, to: FooHandler): void { return to[outer["kind"]](outer["value"]) }
     /// ```
-    fn type_script_enum_handlers() -> Option<Cow<'static, str>>;
+    fn type_script_enum_handlers() -> Result<Cow<'static, str>, &'static str>;
 }
 /// # String serializer for `u8` byte buffers.
 ///

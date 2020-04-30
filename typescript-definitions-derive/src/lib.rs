@@ -191,13 +191,13 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
     };
 
     let type_script_enum_factory = if cfg!(feature = "type-enum-factories") {
-        let verifier = match tsy.verify_source() {
-            Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
-            None => quote!(None),
+        let factory = match parsed.export_type_factory_source() {
+            Ok(ref txt) => quote!(Ok(::std::borrow::Cow::Borrowed(#txt))),
+            Err(err_msg) => quote!(Err(#err_msg)),
         };
         quote!(
-            fn type_script_enum_factory() -> Option<::std::borrow::Cow<'static,str>> {
-                    #verifier
+            fn type_script_enum_factory() -> Result<::std::borrow::Cow<'static,str>, &'static str> {
+                    #factory
             }
         )
     } else {
@@ -206,11 +206,11 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
 
     let type_script_enum_handlers = if cfg!(feature = "type-enum-handlers") {
         let handlers = match parsed.export_type_handler_source() {
-            Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
-            None => quote!(None),
+            Ok(ref txt) => quote!(Ok(::std::borrow::Cow::Borrowed(#txt))),
+            Err(err_msg) => quote!(Err(#err_msg)),
         };
         quote!(
-            fn type_script_enum_handlers() -> Option<::std::borrow::Cow<'static,str>> {
+            fn type_script_enum_handlers() -> Result<::std::borrow::Cow<'static,str>, &'static str> {
                     #handlers
             }
         )
@@ -428,14 +428,32 @@ struct TSOutput {
 }
 
 impl TSOutput {
-    fn export_type_handler_source(&self) -> Option<String> {
-        self.q_maker.enum_handler.as_ref().ok().map(|content| {
-            format!(
-                "{}{}",
-                self.pctxt.global_attrs.to_comment_str(),
-                patch(&content.to_string())
-            )
-        })
+    fn export_type_handler_source(&self) -> Result<String, &'static str> {
+        self.q_maker
+            .enum_handler
+            .as_ref()
+            .map(|content| {
+                format!(
+                    "{}{}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    patch(&content.to_string())
+                )
+            })
+            .map_err(|e| *e)
+    }
+
+    fn export_type_factory_source(&self) -> Result<String, &'static str> {
+        self.q_maker
+            .enum_factory
+            .as_ref()
+            .map(|content| {
+                format!(
+                    "{}{}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    patch(&content.to_string())
+                )
+            })
+            .map_err(|e| *e)
     }
 
     fn export_type_definition_source(&self) -> String {

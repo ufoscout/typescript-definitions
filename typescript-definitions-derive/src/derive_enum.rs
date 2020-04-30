@@ -125,26 +125,36 @@ impl<'a> ParseContext {
             };
         }
 
-        let content: Vec<VariantQuoteMaker> = variants
+        let content: Vec<(&Variant, VariantQuoteMaker)> = variants
             .iter()
-            .map(|variant| match variant.style {
-                ast::Style::Struct => {
-                    self.derive_struct_variant(&taginfo, variant, &variant.fields, ast_container)
-                }
-                ast::Style::Newtype => {
-                    self.derive_newtype_variant(&taginfo, variant, &variant.fields[0])
-                }
-                ast::Style::Tuple => self.derive_tuple_variant(&taginfo, variant, &variant.fields),
-                ast::Style::Unit => self.derive_unit_variant(&taginfo, variant),
+            .map(|variant| {
+                (
+                    *variant,
+                    match variant.style {
+                        ast::Style::Struct => self.derive_struct_variant(
+                            &taginfo,
+                            variant,
+                            &variant.fields,
+                            ast_container,
+                        ),
+                        ast::Style::Newtype => {
+                            self.derive_newtype_variant(&taginfo, variant, &variant.fields[0])
+                        }
+                        ast::Style::Tuple => {
+                            self.derive_tuple_variant(&taginfo, variant, &variant.fields)
+                        }
+                        ast::Style::Unit => self.derive_unit_variant(&taginfo, variant),
+                    },
+                )
             })
             .collect::<Vec<_>>();
 
         // OK generate A | B | C etc
         let newl = nl();
         let tsignore = tsignore();
-        let body = content.iter().map(|q| q.source.clone());
+        let body = content.iter().map(|(_, q)| q.source.clone());
         let verify = if self.gen_guard {
-            let v = content.iter().map(|q| q.verify.clone().unwrap());
+            let v = content.iter().map(|(_, q)| q.verify.clone().unwrap());
             let newls = std::iter::repeat(quote!(#newl));
 
             let obj = &self.arg_name;
@@ -162,12 +172,68 @@ impl<'a> ParseContext {
             None
         };
 
+        let enum_factory = taginfo
+            .tag
+            .as_ref()
+            .ok_or("serde tag must be specified to create enum factory")
+            .and_then(|tag_key| -> Result<QuoteT, &'static str> {
+                let args = content.iter().map(|(_, q)| {
+                    q.inner_type
+                        .as_ref()
+                        .map(|inner_type| quote!(content: #inner_type))
+                        .unwrap_or(quote!())
+                });
+                let has_args = content.iter().map(|(_, q)| q.inner_type.is_some());
+                let ret_constructs = content.iter().zip(has_args).map(
+                    |((v, _), has_args): (&(&Variant, VariantQuoteMaker), bool)| {
+                        let tag_name_str = Literal::string(&v.ident.to_string());
+                        let tag_key_str = Literal::string(tag_key);
+                        if has_args {
+                            taginfo
+                                .content
+                                .map(|content_key| {
+                                    let content_key_str = Literal::string(content_key);
+                                    quote!({ #tag_key_str: #tag_name_str, #content_key_str: content })
+                                })
+                                .unwrap_or(quote!({ #tag_key: #tag_name_str, ...content }))
+                        } else {
+                            quote!({ #tag_key_str: #tag_name_str })
+                        }
+                    },
+                );
+                let tag_name = variants.iter().map(|v| v.ident.clone());
+                // let tag_key_dq_1 = Literal::string(tag_key);
+                // let ret_type = std::iter::repeat(ret_type_1.clone());
+
+                let newls = std::iter::repeat(quote!(#newl));
+
+                let type_ident_str = super::patch(&self.ident.to_string()).to_string();
+                let type_ident_1 = ident_from_str(&type_ident_str);
+                // let type_ident = std::iter::repeat(type_ident_1);
+                let export_factory_ident_1 = ident_from_str(
+                    self.global_attrs
+                        .ts_factory_name
+                        .as_ref()
+                        // default naming
+                        .unwrap_or(&format!("{}Factory", &type_ident_str)),
+                );
+
+                Ok(
+                    quote!(export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R) => Object.freeze({
+                            #( #newls  #tag_name(#args): R {
+                                return fn(#ret_constructs)
+                            },)*#newl
+                        })#newl
+                    ),
+                )
+            });
+
         let enum_handler = taginfo
             .tag
             .as_ref()
             .ok_or("serde tag must be specified to create enum handler")
             .and_then(|tag_key| -> Result<QuoteT, &'static str> {
-                let args = content.iter().map(|q|
+                let args = content.iter().map(|(_, q)|
                     q.inner_type
                     .as_ref()
                     .map(|inner_type|
@@ -215,7 +281,7 @@ impl<'a> ParseContext {
         QuoteMaker {
             source: quote! ( #( #newls | #body)* ),
             verify,
-            enum_factory: Err("not implemented"), // todo
+            enum_factory,
             enum_handler,
             kind: QuoteMakerKind::Union,
         }
