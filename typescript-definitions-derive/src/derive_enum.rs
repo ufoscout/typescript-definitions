@@ -226,13 +226,13 @@ impl<'a> ParseContext {
                 let tag_name_copy = tag_name.clone();
                 let newls_copy = newls.clone();
                 Ok(
-                    quote!(export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R): #export_factory_type_ident_1<R> => Object.freeze({
-                            #( #newls  #tag_name(#args): R {
+                    quote!(export const #export_factory_ident_1 = (fn: (message: #type_ident_1) => any): #export_factory_type_ident_1 => Object.freeze({
+                            #( #newls  #tag_name(#args): void {
                                 return fn(#ret_constructs)
                             },)*#newl
                         });#newl
-                        export type #export_factory_type_ident_1<R> = {
-                            #( #newls_copy  #tag_name_copy(#args_copy): R;)*#newl
+                        export type #export_factory_type_ident_1 = {
+                            #( #newls_copy  #tag_name_copy(#args_copy): void;)*#newl
                         };#newl
                     ),
                 )
