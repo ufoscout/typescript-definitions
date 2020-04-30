@@ -21,8 +21,6 @@ struct TagInfo<'a> {
     content: Option<&'a str>,
     /// flattened without tag `{ "key1": "", "key2": "" }`
     untagged: bool,
-    /// externally tagged
-    externally_tagged: bool,
 }
 impl<'a> TagInfo<'a> {
     fn from_enum(e: &'a EnumTag) -> Self {
@@ -31,37 +29,24 @@ impl<'a> TagInfo<'a> {
                 tag: Some(tag),
                 content: None,
                 untagged: false,
-                externally_tagged: false,
             },
             EnumTag::Adjacent { tag, content, .. } => TagInfo {
                 tag: Some(tag),
                 content: Some(&content),
                 untagged: false,
-                externally_tagged: false,
             },
             EnumTag::External => TagInfo {
                 tag: None,
                 content: None,
                 untagged: false,
-                externally_tagged: true,
             },
             EnumTag::None => TagInfo {
                 tag: None,
                 content: None,
                 untagged: true,
-                externally_tagged: false,
             },
         }
     }
-}
-
-struct HandlerSource {
-    /// None indicates Unit
-    input_type: Option<QuoteT>,
-    /// None indicates no input should be passed
-    input_post_accessor: Option<QuoteT>,
-    /// get the variant type
-    input_tag_accessor: QuoteT,
 }
 
 struct VariantQuoteMaker {
@@ -665,37 +650,5 @@ impl<'a> ParseContext {
             verify,
             inner_type: Some(ty.clone()),
         }
-    }
-}
-
-fn get_enum_handler(
-    taginfo: &TagInfo,
-    variant_name: &str,
-    tag_key: &str,
-    ty: Option<&QuoteT>,
-) -> HandlerSource {
-    // default external tagging { "Variant1" : { "a": 1 } }
-    HandlerSource {
-        input_type: ty.map(|typ| quote! ( #typ )),
-        input_tag_accessor: quote!([#tag_key]),
-        input_post_accessor: {
-            // unit type should be None
-            ty.map(|_| {
-                if taginfo.untagged {
-                    // content mixed in with type together
-                    quote!()
-                } else if taginfo.externally_tagged {
-                    // located at
-                    quote!([#variant_name])
-                } else {
-                    match taginfo.content {
-                        // located at
-                        Some(content_key) => quote!([ #content_key ]),
-                        // spread
-                        None => quote!(),
-                    }
-                }
-            })
-        },
     }
 }
