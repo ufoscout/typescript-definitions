@@ -19,12 +19,13 @@ pub extern crate typescript_definitions_derive;
 
 #[macro_export]
 macro_rules! tsy_lines {
-    ($($line:ty;)+) => {{
-        use ::typescript_definitions::TypeScriptifyTrait;
+    ($($line:expr;)+) => {{
+        // use ::typescript_definitions::TypeScriptifyTrait;
         use ::std::fmt::Write;
         let mut tsy_lines = String::new();
         $({
-            writeln!(&mut tsy_lines, "{}", <$line>::type_script_ify()).unwrap();
+            writeln!(&mut tsy_lines, "{}", $line).unwrap();
+            // writeln!(&mut tsy_lines, "{}", <$line>::type_script_ify()).unwrap();
         })+
         tsy_lines
     }};
