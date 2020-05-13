@@ -75,10 +75,9 @@ fn is_wasm32() -> bool {
     false
 }
 
-/// derive proc_macro to expose Typescript definitions to `wasm-bindgen`.
-///
-/// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
-///
+// derive proc_macro to expose Typescript definitions to `wasm-bindgen`.
+//
+// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
 cfg_if! {
     if #[cfg(any(debug_assertions, feature = "export-typescript"))] {
 
@@ -101,10 +100,9 @@ cfg_if! {
     }
 }
 
-/// derive proc_macro to expose Typescript definitions as a static function.
-///
-/// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
-///
+// derive proc_macro to expose Typescript definitions as a static function.
+//
+// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
 cfg_if! {
     if #[cfg(any(debug_assertions, feature = "export-typescript"))] {
 
