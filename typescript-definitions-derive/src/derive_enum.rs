@@ -187,6 +187,7 @@ impl<'a> ParseContext {
                         }
                     },
                 );
+                let ret_constructs_copy = ret_constructs.clone();
                 let tag_name = variants.iter().map(|v| v.ident.clone());
                 // let tag_key_dq_1 = Literal::string(tag_key);
                 // let ret_type = std::iter::repeat(ret_type_1.clone());
@@ -195,7 +196,7 @@ impl<'a> ParseContext {
 
                 let type_ident_str = super::patch(&self.ident.to_string()).to_string();
                 let type_ident_1 = ident_from_str(&type_ident_str);
-                // let type_ident = std::iter::repeat(type_ident_1);
+                let type_ident = std::iter::repeat(type_ident_1.clone());
                 let export_factory_ident_1 = ident_from_str(
                     self.global_attrs
                         .ts_factory_name
@@ -213,15 +214,23 @@ impl<'a> ParseContext {
                 );
 
                 let args_copy = args.clone();
+                let args_copy2 = args.clone();
                 let tag_name_copy = tag_name.clone();
+                let tag_name_copy2 = tag_name.clone();
                 let newls_copy = newls.clone();
+                let newls_copy2 = newls.clone();
                 Ok(
-                    quote!(export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R): #export_factory_type_ident_1<R> => Object.freeze({
+                    quote!(export const #type_ident_1 = Object.freeze({
+                        #( #newls_copy2  #tag_name_copy2(#args_copy2): #type_ident {
+                            return #ret_constructs_copy
+                        },)*#newl
+                    });#newl
+                    export const #export_factory_ident_1 = <R> (fn: (message: #type_ident_1) => R): #export_factory_type_ident_1<R> => Object.freeze({
                             #( #newls  #tag_name(#args): R {
                                 return fn(#ret_constructs)
                             },)*#newl
                         });#newl
-                        export type #export_factory_type_ident_1<R> = {
+                        export type #export_factory_type_ident_1<R = void> = {
                             #( #newls_copy  #tag_name_copy(#args_copy): R;)*#newl
                         };#newl
                     ),
