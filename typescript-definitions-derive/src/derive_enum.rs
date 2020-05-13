@@ -68,7 +68,6 @@ impl<'a> ParseContext {
     ) -> QuoteMaker {
         // https://serde.rs/enum-representations.html
         let taginfo = TagInfo::from_enum(ast_container.attrs.tag());
-
         // remove skipped ( check for #[serde(skip)] )
         let variants: Vec<&ast::Variant<'a>> = variants
             .into_iter()
@@ -76,7 +75,8 @@ impl<'a> ParseContext {
             .collect();
 
         // is typescript enum compatible
-        let is_enum = variants.iter().all(|v| matches!(v.style, ast::Style::Unit));
+        let is_enum =
+            taginfo.untagged && variants.iter().all(|v| matches!(v.style, ast::Style::Unit));
 
         if is_enum {
             let v = &variants
