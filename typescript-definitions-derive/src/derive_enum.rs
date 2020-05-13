@@ -75,8 +75,9 @@ impl<'a> ParseContext {
             .collect();
 
         // is typescript enum compatible
-        let is_enum =
-            taginfo.untagged && variants.iter().all(|v| matches!(v.style, ast::Style::Unit));
+        let is_enum = taginfo.tag.is_none()
+            && taginfo.content.is_none()
+            && variants.iter().all(|v| matches!(v.style, ast::Style::Unit));
 
         if is_enum {
             let v = &variants
