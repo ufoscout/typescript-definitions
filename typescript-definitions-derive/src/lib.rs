@@ -81,7 +81,7 @@ fn is_wasm32() -> bool {
 cfg_if! {
     if #[cfg(any(debug_assertions, feature = "export-typescript"))] {
 
-        #[proc_macro_derive(TypescriptDefinition, attributes(ts))]
+        #[proc_macro_derive(TypeScriptDefinition, attributes(ts))]
         pub fn derive_typescript_definition(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             if !(is_wasm32() || cfg!(feature="test")) {
@@ -93,7 +93,7 @@ cfg_if! {
         }
     } else {
 
-        #[proc_macro_derive(TypescriptDefinition, attributes(ts))]
+        #[proc_macro_derive(TypeScriptDefinition, attributes(ts))]
         pub fn derive_typescript_definition(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             proc_macro::TokenStream::new()
         }

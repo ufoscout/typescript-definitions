@@ -152,9 +152,9 @@ Please see [Credits](#credits).
 use wasm_bindgen::prelude::*;
 
 use serde::Serialize;
-use typescript_definitions::TypescriptDefinition;
+use typescript_definitions::TypeScriptDefinition;
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 #[serde(tag = "tag", content = "fields")]
 /// Important info about Enum
 enum Enum {
@@ -200,7 +200,7 @@ See [features](#features) below if you really want them in your release build.
 
 There is a very small example in the repository that [works for me™](https://github.com/arabidopsis/typescript-definitions/tree/master/example/) if you want to get started.
 
-This crate only exports two derive macros: `TypescriptDefinition` and `TypeScriptify`, a simple
+This crate only exports two derive macros: `TypeScriptDefinition` and `TypeScriptify`, a simple
 trait `TypeScriptifyTrait` and a (very simple) serializer for byte arrays.
 
 In your crate create a lib target in `Cargo.toml` pointing to your "interfaces"
@@ -470,8 +470,8 @@ e.g. Maps with non string keys: This
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
 use std::collections::HashMap;
-use typescript_definitions::TypescriptDefinition;
-#[derive(Serialize, TypescriptDefinition)]
+use typescript_definitions::TypeScriptDefinition;
+#[derive(Serialize, TypeScriptDefinition)]
 pub struct IntMap {
     pub intmap: HashMap<i32, i32>,
 }
@@ -511,14 +511,14 @@ This will work:
 ```rust
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
-use typescript_definitions::TypescriptDefinition;
+use typescript_definitions::TypeScriptDefinition;
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 pub struct Value<T> {
     pub value: T,
 }
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 pub struct DependsOnValue {
     pub value: Vec<Value<i32>>,
 }
@@ -531,14 +531,14 @@ Beyond this you will have to write your own guards e.g.:
 ```rust
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
-use typescript_definitions::TypescriptDefinition;
+use typescript_definitions::TypeScriptDefinition;
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 pub struct Value<T> {
     pub value: T,
 }
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 pub struct DependsOnValue {
     #[ts(ts_guard="{value: number[]}")]
     pub value: Value<Vec<i32>>,
@@ -602,11 +602,11 @@ If you reference another type in a struct e.g.
 // #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
-use typescript_definitions::{TypescriptDefinition};
+use typescript_definitions::{TypeScriptDefinition};
 #[derive(Serialize)]
 struct B<T> {q: T}
 
-#[derive(Serialize, TypescriptDefinition)]
+#[derive(Serialize, TypeScriptDefinition)]
 struct A {
     x : f64,
     b: B<f64>,
@@ -614,7 +614,7 @@ struct A {
 ```
 
 then this will "work" (producing `export type A = { x: number ,b: B<number> })`) but B will be opaque to
-typescript unless B is *also* `#[derive(TypescriptDefinition)]`.
+typescript unless B is *also* `#[derive(TypeScriptDefinition)]`.
 
 Currently there is no check for this omission.
 
