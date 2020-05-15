@@ -34,9 +34,10 @@ use std::borrow::Cow;
 
 const TRIPPLE_EQ: &str = "\"__============__\"";
 const NL_PATCH: &str = "\"__nlnlnlnl__\"";
+const PURE_PATCH: &str = "\"__pure__\"";
 const TS_IGNORE_PATCH: &str = "\"__ts_ignore__\"";
 // type N = [(&'static str, &'static str); 10];
-const NAMES: [(&str, &str); 14] = [
+const NAMES: [(&str, &str); 15] = [
     ("brack", r"\s*\[\s+\]"),
     ("brace", r"\{\s+\}"),
     ("colon", r"\s+[:]\s"),
@@ -48,9 +49,10 @@ const NAMES: [(&str, &str); 14] = [
     ("semi", r"\s+;"),
     ("call", r"\s\(\s+\)\s"),
     ("dot", r"\s\.\s"),
-    ("nlpatch", NL_PATCH), // for adding newlines to output string
+    ("nlpatch", NL_PATCH),         // for adding newlines to output string
     ("tsignore", TS_IGNORE_PATCH), // for adding ts-ignore comments to output string
-    ("nl", r"\n+"),        // last!
+    ("pure", PURE_PATCH),          // for adding ts-ignore comments to output string
+    ("nl", r"\n+"),                // last!
 ];
 lazy_static! {
     static ref RE: Regex = {
@@ -119,6 +121,7 @@ pub fn patch(s: &str) -> Cow<'_, str> {
             "call" => " () ",
             "nlpatch" => "\n",
             "tsignore" => "//@ts-ignore\n",
+            "pure" => "/*#__PURE__*/",
             _ => return Cow::Owned(c.get(0).unwrap().as_str().to_owned()), // maybe should just panic?
         };
         Cow::Borrowed(m)
@@ -134,6 +137,11 @@ pub fn eq() -> Literal {
 pub fn nl() -> Literal {
     Literal::string(&NL_PATCH[1..NL_PATCH.len() - 1])
 }
+
+// #[inline]
+// pub fn pure() -> Literal {
+//     Literal::string(&PURE_PATCH[1..PURE_PATCH.len() - 1])
+// }
 
 #[inline]
 pub fn tsignore() -> Literal {

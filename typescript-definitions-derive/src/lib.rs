@@ -126,7 +126,16 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
     let verify = cfg!(feature = "type-guards");
     let tsy = Typescriptify::new(input);
     let parsed = tsy.parse(verify);
-    let export_string = parsed.export_type_definition_source();
+    let export_source = parsed.export_type_definition_source();
+    let export_string = format!(
+        // we're still going to include the values so we can separate them out in an additional step for webpack
+        // the alternative to this seems like it might be to fork wasm-bindgen... which I don't want to do.
+        "{}\ntype __StartValuesFor__{}__ = `\n{}\n`/*EndValuesFor__{}__*/",
+        export_source.declarations,
+        parsed.ident.as_str(),
+        export_source.values,
+        parsed.ident.as_str()
+    );
     let name = tsy.ident.to_string().to_uppercase();
 
     let export_ident = ident_from_str(&format!("TS_EXPORT_{}", name));
@@ -137,13 +146,14 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
         pub const #export_ident : &'static str = #export_string;
     };
 
-    if let Some(ref verify) = tsy.verify_source() {
-        let export_ident = ident_from_str(&format!("TS_EXPORT_VERIFY_{}", name));
-        q.extend(quote!(
-            #[wasm_bindgen(typescript_custom_section)]
-            pub const #export_ident : &'static str = #verify;
-        ))
-    }
+    // ARCHIVED: No longer implemented, as verify is ion the value space and can't bet attached to the declaration file
+    // if let Some(ref verify) = tsy.verify_source() {
+    //     let export_ident = ident_from_str(&format!("TS_EXPORT_VERIFY_{}", name));
+    //     q.extend(quote!(
+    //         #[wasm_bindgen(typescript_custom_section)]
+    //         pub const #export_ident : &'static str = #verify;
+    //     ))
+    // }
 
     // just to allow testing... only `--features=test` seems to work
     if cfg!(any(test, feature = "test")) {
@@ -169,7 +179,8 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
     let verify = cfg!(feature = "type-guards");
     let tsy = Typescriptify::new(input);
     let parsed = tsy.parse(verify);
-    let export_string = parsed.export_type_definition_source();
+    let export_source = parsed.export_type_definition_source();
+    let export_string = format!("{}\n{}", export_source.declarations, export_source.values);
     let ident = &tsy.ident;
 
     let (impl_generics, ty_generics, where_clause) = tsy.generics.split_for_impl();
@@ -425,6 +436,17 @@ struct TSOutput {
     q_maker: QuoteMaker,
 }
 
+/// We have multiple kinds of exports that we need to differentiate between when using something like
+/// WASM Bindgen. For WASM-Bindgen, we have types needed for inputs (in the index.d.ts file), but we
+/// also want to provide helper values which cannot exist in the .d.ts file. For this, we have to separate
+/// what are simply type declarations, and what are helper values (functions, etc)
+struct TSDefinitions {
+    /// export type A = [number];
+    pub declarations: String,
+    /// export const a: A = [1];
+    pub values: String,
+}
+
 impl TSOutput {
     fn export_type_handler_source(&self) -> Result<String, &'static str> {
         self.q_maker
@@ -454,21 +476,52 @@ impl TSOutput {
             .map_err(|e| *e)
     }
 
-    fn export_type_definition_source(&self) -> String {
-        if let QuoteMakerKind::Enum = self.q_maker.kind {
-            format!(
-                "{}export enum {} {};",
-                self.pctxt.global_attrs.to_comment_str(),
-                self.ident,
-                patch(&self.q_maker.source.to_string())
-            )
-        } else {
-            format!(
-                "{}export type {} = {};",
-                self.pctxt.global_attrs.to_comment_str(),
-                self.ident,
-                patch(&self.q_maker.source.to_string())
-            )
+    fn export_type_definition_source(&self) -> TSDefinitions {
+        match self.q_maker.kind {
+            QuoteMakerKind::Enum => TSDefinitions {
+                declarations: format!(
+                    "{}export enum {} {}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    self.ident,
+                    patch(&self.q_maker.source.to_string())
+                ),
+                values: format!(
+                    "{}export enum {} {}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    self.ident,
+                    patch(&self.q_maker.source.to_string())
+                ),
+            },
+            QuoteMakerKind::Union => TSDefinitions {
+                declarations: format!(
+                    "{}export type {} = {}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    self.ident,
+                    patch(&self.q_maker.source.to_string()),
+                ),
+                values: format!(
+                    "{}\n{}",
+                    self.export_type_factory_source()
+                        .expect("factory exists for union"),
+                    self.export_type_handler_source()
+                        .expect("handler exists for union"),
+                ),
+            },
+            QuoteMakerKind::Object => TSDefinitions {
+                declarations: format!(
+                    "{}export type {} = {}",
+                    self.pctxt.global_attrs.to_comment_str(),
+                    self.ident,
+                    patch(&self.q_maker.source.to_string()),
+                ),
+                values: format!(
+                    "{}export const {} = (check: {}) => check\n",
+                    // check create function
+                    self.pctxt.global_attrs.to_comment_str(),
+                    self.ident,
+                    self.ident,
+                ),
+            },
         }
     }
 }
