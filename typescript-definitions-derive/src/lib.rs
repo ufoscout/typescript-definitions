@@ -271,12 +271,12 @@ impl Typescriptify {
         // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
         cx.check().unwrap();
 
-        return Self {
+        Self {
             arg_name: quote!(obj),
             generics: container.generics.clone(),
             ident: container.ident.clone(),
             input,
-        };
+        }
     }
 
     pub fn parse_verify(&self) -> Option<VerifySourceResult> {
@@ -339,7 +339,7 @@ impl Typescriptify {
 
         TSOutput {
             ident: patch(&container.ident.clone().to_string()).into(),
-            pctxt: pctxt,
+            pctxt,
             q_maker: typescript,
         }
     }

@@ -264,13 +264,11 @@ impl<'a> FieldContext<'a> {
 
     pub fn verify_single_type(&self, obj: &TokenStream) -> QuoteT {
         if let Some(ref s) = self.attrs.ts_guard {
-            return self.ts_guard(obj, s);
-        };
-        if let Some(ref s) = self.attrs.ts_type {
-            return self.ts_guard(obj, s);
-        };
-        if let Some(ref ty) = self.attrs.ts_as {
-            return self.verify_type(obj, ty);
+            self.ts_guard(obj, s)
+        } else if let Some(ref s) = self.attrs.ts_type {
+            self.ts_guard(obj, s)
+        } else if let Some(ref ty) = self.attrs.ts_as {
+            self.verify_type(obj, ty)
         } else {
             self.verify_type(obj, &self.field.ty)
         }
