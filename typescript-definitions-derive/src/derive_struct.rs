@@ -6,11 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use proc_macro2::Literal;
 use quote::quote;
 use serde_derive_internals::ast;
 
-use super::{filter_visible, patch::eq, patch::nl, ParseContext, QuoteMaker, QuoteMakerKind};
+use super::{filter_visible, ParseContext, QuoteMaker, QuoteMakerKind};
 
 const DEFAULT_ERROR: Result<super::QuoteT, &'static str> =
     Err("struct cannot have a handler or factory");
@@ -40,16 +39,8 @@ impl<'a> ParseContext {
         }
         self.check_flatten(&[field], ast_container);
 
-        let verify = if self.gen_guard {
-            let v = self.verify_type(&self.arg_name, field);
-            Some(quote!( { #v; return true } ))
-        } else {
-            None
-        };
-
         QuoteMaker {
             source: self.field_to_ts(field),
-            verify,
             enum_factory: DEFAULT_ERROR,
             enum_handler: DEFAULT_ERROR,
             kind: QuoteMakerKind::Object,
@@ -57,15 +48,8 @@ impl<'a> ParseContext {
     }
 
     fn derive_struct_unit(&self) -> QuoteMaker {
-        let verify = if self.gen_guard {
-            let obj = &self.arg_name;
-            Some(quote!({ if (#obj == undefined) return false; return true }))
-        } else {
-            None
-        };
         QuoteMaker {
             source: quote!({}),
-            verify,
             enum_factory: DEFAULT_ERROR,
             enum_handler: DEFAULT_ERROR,
             kind: QuoteMakerKind::Object,
@@ -88,20 +72,8 @@ impl<'a> ParseContext {
         self.check_flatten(&fields, ast_container);
         let content = self.derive_fields(&fields);
 
-        let verify = if self.gen_guard {
-            let obj = &self.arg_name;
-            let v = self.verify_fields(&obj, &fields);
-            let n = fields.len();
-            let l = nl();
-            let nl = (0..n).map(|_| quote!(#l));
-            Some(quote!( { if (#obj == undefined) return false; #( #nl #v;)* #l return true } ))
-        } else {
-            None
-        };
-
         QuoteMaker {
             source: quote!({ #(#content);* }),
-            verify,
             enum_factory: DEFAULT_ERROR,
             enum_handler: DEFAULT_ERROR,
             kind: QuoteMakerKind::Object,
@@ -123,25 +95,9 @@ impl<'a> ParseContext {
         };
         self.check_flatten(&fields, ast_container);
         let content = self.derive_field_tuple(&fields);
-        let verify = if self.gen_guard {
-            let obj = &self.arg_name;
-            let verify = self.verify_field_tuple(&obj, &fields);
-            let eq = eq();
-            let len = Literal::usize_unsuffixed(fields.len());
-
-            // obj can't be null or undefined
-            Some(quote!({
-            if (!Array.isArray(#obj) || ! #obj.length #eq #len ) return false;
-             #(#verify;)*
-             return true
-             }))
-        } else {
-            None
-        };
 
         QuoteMaker {
             source: quote!([#(#content),*]),
-            verify,
             enum_factory: DEFAULT_ERROR,
             enum_handler: DEFAULT_ERROR,
             kind: QuoteMakerKind::Object,

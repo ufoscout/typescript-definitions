@@ -45,10 +45,6 @@ pub use typescript_definitions_derive::*;
 pub trait TypeScriptifyTrait {
     fn type_script_ify() -> Cow<'static, str>;
 
-    #[cfg(feature = "type-guards")]
-    /// Available with `--features="type-guards"`
-    fn type_script_guard() -> Option<Cow<'static, str>>;
-
     #[cfg(feature = "type-enum-factories")]
     /// Available with `--features="type-enum-factories"`
     ///

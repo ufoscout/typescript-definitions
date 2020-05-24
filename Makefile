@@ -1,11 +1,11 @@
 
 
 test: readme
-	@cargo test --all --features="test type-guards"
+	@cargo test --all --features="test"
 
 doc: readme
 	@rm -rf target/doc
-	@cargo doc --no-deps --open --features="type-guards"
+	@cargo doc --no-deps --open
 	# ./scripts/readme.sh
 
 #@awk '{ print "//! " $$0}' README.md  > src/README.rs

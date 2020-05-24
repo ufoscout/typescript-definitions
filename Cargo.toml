@@ -31,10 +31,8 @@ arrayvec = { version="0.5.1", features = ["serde"] }
 
 
 [features]
-# default = ["type-guards"]
 export-typescript = ["typescript-definitions-derive/export-typescript"]
 test = ["typescript-definitions-derive/test"]
-type-guards = ["typescript-definitions-derive/type-guards"]
 type-enum-factories = ["typescript-definitions-derive/type-enum-factories"]
 type-enum-handlers = ["typescript-definitions-derive/type-enum-handlers"]
 

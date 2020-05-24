@@ -5,7 +5,7 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-use super::patch::{eq, nl};
+use super::patch::nl;
 use super::QuoteT;
 use super::{filter_visible, ident_from_str, ParseContext, QuoteMaker, QuoteMakerKind};
 use crate::patch::tsignore;
@@ -52,8 +52,6 @@ impl<'a> TagInfo<'a> {
 struct VariantQuoteMaker {
     /// message type possibly including tag key value
     pub source: QuoteT,
-    /// type guard quote token stream
-    pub verify: Option<QuoteT>,
     /// enum factory quote token stream
     // pub enum_factory: Result<QuoteT, &'static str>,
     /// inner type token stream
@@ -86,25 +84,9 @@ impl<'a> ParseContext {
                 .collect::<Vec<_>>();
 
             let k = v.iter().map(|v| ident_from_str(&v)).collect::<Vec<_>>();
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                let o = (0..v.len()).map(|_| obj.clone());
-                let eq = (0..v.len()).map(|_| eq());
-
-                Some(quote!(
-                    {
-
-                        if (!((#(#o #eq #v)||*))) return false;
-                        return true;
-                    }
-                ))
-            } else {
-                None
-            };
 
             return QuoteMaker {
                 source: quote! ( { #(#k = #v),* } ),
-                verify,
                 enum_factory: Err("factory cannot be created with raw enum type"),
                 enum_handler: Err("handler cannot be created with raw enum type"),
                 kind: QuoteMakerKind::Enum,
@@ -139,24 +121,6 @@ impl<'a> ParseContext {
         let newl = nl();
         let tsignore = tsignore();
         let body = content.iter().map(|(_, q)| q.source.clone());
-        let verify = if self.gen_guard {
-            let v = content.iter().map(|(_, q)| q.verify.clone().unwrap());
-            let newls = std::iter::repeat(quote!(#newl));
-
-            let obj = &self.arg_name;
-            // let newls = std::iter::from_fn(|| Some(quote!(#newl)));
-            // obj can't be null or undefined
-            Some(quote!(
-                {
-                    if (#obj == undefined) return false;
-
-                    #( #newls if ( ( () => #v )() ) return true; )*
-                    #newl return false;
-                }
-            ))
-        } else {
-            None
-        };
 
         let enum_factory = taginfo
             .tag
@@ -289,7 +253,6 @@ impl<'a> ParseContext {
         let newls = std::iter::repeat(quote!(#newl));
         QuoteMaker {
             source: quote! ( #( #newls | #body)* ),
-            verify,
             enum_factory,
             enum_handler,
             kind: QuoteMakerKind::Union,
@@ -299,41 +262,18 @@ impl<'a> ParseContext {
     /// Depends on TagInfo for layout
     fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> VariantQuoteMaker {
         let variant_name = variant.attrs.name().serialize_name(); // use serde name instead of variant.ident
-        let eq = eq();
 
         if taginfo.tag.is_none() {
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                Some(quote!(
-                    {
-                        return #obj #eq #variant_name;
-                    }
-                ))
-            } else {
-                None
-            };
             return VariantQuoteMaker {
                 source: quote!(#variant_name),
-                verify,
                 inner_type: None,
             };
         }
         let tag = ident_from_str(taginfo.tag.unwrap());
-        let verify = if self.gen_guard {
-            let obj = &self.arg_name;
-            Some(quote!(
-                {
-                    return #obj.#tag #eq #variant_name;
-                }
-            ))
-        } else {
-            None
-        };
         VariantQuoteMaker {
             source: quote! (
                 { #tag: #variant_name }
             ),
-            verify,
             inner_type: None,
         }
     }
@@ -351,48 +291,21 @@ impl<'a> ParseContext {
         };
         let ty = self.field_to_ts(field);
         let variant_name = self.variant_name(variant);
-        let obj = &self.arg_name;
 
         if taginfo.tag.is_none() {
             if taginfo.untagged {
-                let verify = if self.gen_guard {
-                    let v = self.verify_type(&obj, field);
-
-                    Some(quote!( { #v; return true }))
-                } else {
-                    None
-                };
                 return VariantQuoteMaker {
                     source: quote! ( #ty ),
-                    verify,
                     inner_type: Some(ty.clone()),
                 };
             };
             let tag = ident_from_str(&variant_name);
 
-            let verify = if self.gen_guard {
-                let v = quote!(v);
-                let verify = self.verify_type(&v, field);
-                let eq = eq();
-                // #ty might be a Option None and therefore null
-                // OTOH #verify might be assuming not null and not undefined
-                Some(quote!(
-                    {
-                        const v = #obj.#tag;
-                        if (v #eq undefined) return false;
-                        #verify;
-                        return true;
-                    }
-                ))
-            } else {
-                None
-            };
             return VariantQuoteMaker {
                 source: quote! (
                     { #tag : #ty }
 
                 ),
-                verify,
                 inner_type: Some(ty.clone()),
             };
         };
@@ -404,26 +317,10 @@ impl<'a> ParseContext {
             ident_from_str(CONTENT) // should not get here...
         };
 
-        let verify = if self.gen_guard {
-            let eq = eq();
-            let verify = self.verify_type(&quote!(val), field);
-            Some(quote!(
-            {
-                if (!(#obj.#tag #eq #variant_name)) return false;
-                const val = #obj.#content;
-                if (val #eq undefined) return false;
-                #verify;
-                return true;
-            }))
-        } else {
-            None
-        };
-
         VariantQuoteMaker {
             source: quote! (
                 { #tag: #variant_name; #content: #ty }
             ),
-            verify,
             inner_type: Some(ty.clone()),
         }
     }
@@ -453,49 +350,18 @@ impl<'a> ParseContext {
             { #ty_inner }
         );
 
-        let last = nl();
-        let nl = std::iter::repeat(quote!(#last));
         if taginfo.tag.is_none() {
             if taginfo.untagged {
-                let verify = if self.gen_guard {
-                    let verify = self.verify_fields(&self.arg_name, &fields);
-
-                    Some(quote!(
-                        {
-                            #( #nl #verify;)*
-                            #last return true;
-                        }
-                    ))
-                } else {
-                    None
-                };
                 return VariantQuoteMaker {
                     source: quote!(#ty),
-                    verify,
                     inner_type: Some(ty.clone()),
                 };
             };
-            let v = &quote!(v);
             let tag = ident_from_str(&variant_name);
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                let verify = self.verify_fields(&v, &fields);
-                Some(quote!(
-                    {
-                        const v = #obj.#tag;
-                        if (v == undefined) return false;
-                        #(#nl #verify;)*
-                        #last return true;
-                    }
-                ))
-            } else {
-                None
-            };
             return VariantQuoteMaker {
                 source: quote! (
                     { #tag : #ty  }
                 ),
-                verify,
                 inner_type: Some(ty.clone()),
             };
         }
@@ -505,28 +371,10 @@ impl<'a> ParseContext {
         if let Some(content) = taginfo.content {
             let content = ident_from_str(&content);
 
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                let v = quote!(v);
-                let verify = self.verify_fields(&v, &fields);
-                let eq = eq();
-                Some(quote!(
-                {
-                    if (!(#obj.#tag #eq #variant_name)) return false;
-                    const v = #obj.#content;
-                    if (v == undefined) return false;
-                    #(#nl #verify;)*
-                    #last return true;
-                }
-                ))
-            } else {
-                None
-            };
             VariantQuoteMaker {
                 source: quote! (
                     { #tag: #variant_name; #content: #ty }
                 ),
-                verify,
                 inner_type: Some(ty.clone()),
             }
         } else {
@@ -543,26 +391,11 @@ impl<'a> ParseContext {
                     ));
                 }
             };
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                let verify = self.verify_fields(&obj, &fields);
-                let eq = eq();
-                Some(quote!(
-                {
-                    if (!(#obj.#tag #eq #variant_name)) return false;
-                    #(#nl #verify;)*
-                    #last return true;
-                }
-                ))
-            } else {
-                None
-            };
             // spread together tagged no content
             VariantQuoteMaker {
                 source: quote! (
                     { #tag: #variant_name; #ty_inner }
                 ),
-                verify,
                 inner_type: Some(ty.clone()),
             }
         }
@@ -587,45 +420,14 @@ impl<'a> ParseContext {
 
         if taginfo.tag.is_none() {
             if taginfo.untagged {
-                let verify = if self.gen_guard {
-                    let obj = &self.arg_name;
-                    let verify = self.verify_field_tuple(&obj, &fields);
-                    let eq = eq();
-                    let len = Literal::usize_unsuffixed(fields.len());
-
-                    Some(quote!({
-                        if (!Array.isArray(#obj) || !(#obj.length #eq #len)) return false;
-                        #(#verify;)*
-                        return true;
-                    }))
-                } else {
-                    None
-                };
                 return VariantQuoteMaker {
                     source: quote! (#ty),
-                    verify,
                     inner_type: Some(ty.clone()),
                 };
             }
             let tag = ident_from_str(&variant_name);
-            let verify = if self.gen_guard {
-                let obj = &self.arg_name;
-                let v = quote!(v);
-                let verify = self.verify_field_tuple(&v, &fields);
-                let len = Literal::usize_unsuffixed(fields.len());
-                let eq = eq();
-                Some(quote!({
-                    const v = #obj.#tag;
-                    if (!Array.isArray(v) || !(v.length #eq #len)) return false;
-                    #(#verify;)*
-                    return true;
-                }))
-            } else {
-                None
-            };
             return VariantQuoteMaker {
                 source: quote! ({ #tag : #ty }),
-                verify,
                 inner_type: Some(ty.clone()),
             };
         };
@@ -637,27 +439,10 @@ impl<'a> ParseContext {
             ident_from_str(CONTENT)
         };
 
-        let verify = if self.gen_guard {
-            let eq = eq();
-            let obj = &self.arg_name;
-            let v = quote!(v);
-            let verify = self.verify_field_tuple(&v, &fields);
-            let len = Literal::usize_unsuffixed(fields.len());
-            Some(quote!({
-                if (!(#obj.#tag #eq #variant_name)) return false;
-                const v = #obj.#content;
-                if (!Array.isArray(v) || !(v.length #eq #len)) return false;
-                #(#verify;)*
-                return true;
-            }))
-        } else {
-            None
-        };
         VariantQuoteMaker {
             source: quote! (
             { #tag: #variant_name; #content : #ty }
             ),
-            verify,
             inner_type: Some(ty.clone()),
         }
     }

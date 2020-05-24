@@ -13,21 +13,16 @@
 extern crate proc_macro;
 #[macro_use]
 extern crate cfg_if;
-use proc_macro2::Ident;
 use quote::quote;
 use serde_derive_internals::{ast, Ctxt, Derive};
-// use std::str::FromStr;
-use std::cell::RefCell;
 use syn::DeriveInput;
 
 mod attrs;
 mod derive_enum;
 mod derive_struct;
-mod guards;
 mod patch;
 mod tests;
 mod tots;
-mod typescript;
 mod utils;
 
 use attrs::Attrs;
@@ -38,12 +33,8 @@ use patch::patch;
 // too many TokenStreams around! give it a different name
 type QuoteT = proc_macro2::TokenStream;
 
-type Bounds = Vec<TSType>;
-
 struct QuoteMaker {
     pub source: QuoteT,
-    /// type guard quote token stream
-    pub verify: Option<QuoteT>,
     /// enum factory quote token stream
     pub enum_factory: Result<QuoteT, &'static str>,
     /// enum handler quote token stream
@@ -123,9 +114,8 @@ cfg_if! {
 
 #[allow(unused)]
 fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
-    let verify = cfg!(feature = "type-guards");
     let tsy = Typescriptify::new(input);
-    let parsed = tsy.parse(verify);
+    let parsed = tsy.parse();
     let export_source = parsed.export_type_definition_source();
     let export_string = format!(
         // we're still going to include the values so we can separate them out in an additional step for webpack
@@ -141,19 +131,9 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
     let export_ident = ident_from_str(&format!("TS_EXPORT_{}", name));
 
     let mut q = quote! {
-
         #[wasm_bindgen(typescript_custom_section)]
         pub const #export_ident : &'static str = #export_string;
     };
-
-    // ARCHIVED: No longer implemented, as verify is ion the value space and can't bet attached to the declaration file
-    // if let Some(ref verify) = tsy.verify_source() {
-    //     let export_ident = ident_from_str(&format!("TS_EXPORT_VERIFY_{}", name));
-    //     q.extend(quote!(
-    //         #[wasm_bindgen(typescript_custom_section)]
-    //         pub const #export_ident : &'static str = #verify;
-    //     ))
-    // }
 
     // just to allow testing... only `--features=test` seems to work
     if cfg!(any(test, feature = "test")) {
@@ -175,29 +155,13 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
 
 #[allow(unused)]
 fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
-    // panic!("after here");
-    let verify = cfg!(feature = "type-guards");
     let tsy = Typescriptify::new(input);
-    let parsed = tsy.parse(verify);
+    let parsed = tsy.parse();
     let export_source = parsed.export_type_definition_source();
     let export_string = format!("{}\n{}", export_source.declarations, export_source.values);
     let ident = &tsy.ident;
 
     let (impl_generics, ty_generics, where_clause) = tsy.generics.split_for_impl();
-
-    let type_script_guard = if cfg!(feature = "type-guards") {
-        let verifier = match tsy.verify_source() {
-            Some(ref txt) => quote!(Some(::std::borrow::Cow::Borrowed(#txt))),
-            None => quote!(None),
-        };
-        quote!(
-            fn type_script_guard() -> Option<::std::borrow::Cow<'static,str>> {
-                    #verifier
-            }
-        )
-    } else {
-        quote!()
-    };
 
     let type_script_enum_factory = if cfg!(feature = "type-enum-factories") {
         let factory = match parsed.export_type_factory_source() {
@@ -232,7 +196,6 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
             fn type_script_ify() ->  ::std::borrow::Cow<'static,str> {
                 ::std::borrow::Cow::Borrowed(#export_string)
             }
-            #type_script_guard
             #type_script_enum_factory
             #type_script_enum_handlers
         }
@@ -250,8 +213,6 @@ fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
 pub(crate) struct Typescriptify {
     ident: syn::Ident,
     generics: syn::Generics,
-    /// quoted identifier { obj }
-    arg_name: QuoteT,
     input: DeriveInput,
 }
 
@@ -272,34 +233,13 @@ impl Typescriptify {
         cx.check().unwrap();
 
         Self {
-            arg_name: quote!(obj),
             generics: container.generics.clone(),
             ident: container.ident.clone(),
             input,
         }
     }
 
-    pub fn parse_verify(&self) -> Option<VerifySourceResult> {
-        let tsout = self.parse(true);
-        let statements = tsout.pctxt.extra_guard.borrow();
-
-        let TSOutput { q_maker, .. } = self.parse(true);
-
-        q_maker.verify.map(|verifier| VerifySourceResult {
-            body: verifier,
-            extra_source: statements
-                .iter()
-                .map(|extra| {
-                    let e = extra.to_string();
-
-                    let extra = patch(&e);
-                    "// generic test  \n".to_string() + &extra
-                })
-                .collect(),
-        })
-    }
-
-    fn parse(&self, gen_verifier: bool) -> TSOutput {
+    fn parse(&self) -> TSOutput {
         let input = &self.input;
         let cx = Ctxt::new();
 
@@ -312,18 +252,12 @@ impl Typescriptify {
         };
 
         let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
-        let ts_generics = ts_generics(&container.generics);
-        let gv = gen_verifier && attrs.guard;
 
         let (typescript, pctxt) = {
             let pctxt = ParseContext {
                 ctxt: Some(cx),
-                arg_name: quote!(obj),
                 global_attrs: attrs,
-                gen_guard: gv,
                 ident: container.ident.clone(),
-                ts_generics,
-                extra_guard: RefCell::new(vec![]),
             };
 
             let typescript = match container.data {
@@ -343,91 +277,6 @@ impl Typescriptify {
             q_maker: typescript,
         }
     }
-}
-
-struct VerifySourceResult {
-    body: QuoteT,
-    extra_source: Vec<String>,
-}
-
-impl Typescriptify {
-    /* #region verify-and-ts-help */
-
-    fn verify_source(&self) -> Option<String> {
-        match self.parse_verify() {
-            None => None,
-            Some(ref result) => {
-                let mut s = {
-                    let ident = &self.ident;
-                    let obj = &self.arg_name;
-                    let body = result.body.to_string();
-                    let body = patch(&body);
-
-                    let generics = self.ts_generics(false);
-                    let generics_wb = &generics; // self.ts_generics(true);
-                    let is_generic = !ts_generics(&self.generics).is_empty();
-                    let name = guard_name(&ident);
-                    if is_generic {
-                        format!(
-                            "export const {name} = {generics_wb}({obj}: any, typename: string): \
-                                 {obj} is {ident}{generics} => {body}",
-                            name = name,
-                            obj = obj,
-                            body = body,
-                            generics = generics,
-                            generics_wb = generics_wb,
-                            ident = ident
-                        )
-                    } else {
-                        format!(
-                            "export const {name} = {generics_wb}({obj}: any): \
-                                 {obj} is {ident}{generics} => {body}",
-                            name = name,
-                            obj = obj,
-                            body = body,
-                            generics = generics,
-                            generics_wb = generics_wb,
-                            ident = ident
-                        )
-                    }
-                };
-                for txt in &result.extra_source {
-                    s.push('\n');
-                    s.push_str(&txt);
-                }
-                Some(s)
-            }
-        }
-    }
-
-    fn ts_generics(&self, with_bound: bool) -> QuoteT {
-        let args_wo_lt = self.ts_generic_args_wo_lifetimes(with_bound);
-        if args_wo_lt.is_empty() {
-            quote!()
-        } else {
-            quote!(<#(#args_wo_lt),*>)
-        }
-    }
-
-    fn ts_generic_args_wo_lifetimes(&self, with_bounds: bool) -> Vec<QuoteT> {
-        ts_generics(&self.generics)
-            .iter()
-            .filter_map(move |g| match g {
-                Some((ref ident, ref bounds)) => {
-                    // we ignore trait bounds for typescript
-                    if bounds.is_empty() || !with_bounds {
-                        Some(quote! (#ident))
-                    } else {
-                        let bounds = bounds.iter().map(|ts| &ts.ident);
-                        Some(quote! { #ident extends #(#bounds)&* })
-                    }
-                }
-
-                None => None,
-            })
-            .collect()
-    }
-    /* #endregion verify-and-ts-help */
 }
 
 struct TSOutput {
@@ -526,44 +375,6 @@ impl TSOutput {
     }
 }
 
-fn ts_generics(g: &syn::Generics) -> Vec<Option<(Ident, Bounds)>> {
-    // lifetime params are represented by None since we are only going
-    // to translate them to '_
-
-    // impl#generics TypeScriptTrait for A<... lifetimes to '_ and T without bounds>
-
-    use syn::{GenericParam, TypeParamBound};
-    g.params
-        .iter()
-        .map(|p| match p {
-            GenericParam::Lifetime(..) => None,
-            GenericParam::Type(ref ty) => {
-                let bounds = ty
-                    .bounds
-                    .iter()
-                    .filter_map(|b| match b {
-                        TypeParamBound::Trait(t) => Some(&t.path),
-                        _ => None, // skip lifetimes for bounds
-                    })
-                    .map(last_path_element)
-                    .filter_map(|b| b)
-                    .collect::<Vec<_>>();
-
-                Some((ty.ident.clone(), bounds))
-            }
-            GenericParam::Const(ref param) => {
-                let ty = TSType {
-                    ident: param.ident.clone(),
-                    path: vec![],
-                    args: vec![param.ty.clone()],
-                    return_type: None,
-                };
-                Some((param.ident.clone(), vec![ty]))
-            }
-        })
-        .collect()
-}
-
 fn return_type(rt: &syn::ReturnType) -> Option<syn::Type> {
     match rt {
         syn::ReturnType::Default => None, // e.g. undefined
@@ -659,12 +470,8 @@ impl<'a> FieldContext<'a> {
 
 pub(crate) struct ParseContext {
     ctxt: Option<Ctxt>,  // serde parse context for error reporting
-    arg_name: QuoteT,    // top level "name" of argument for verifier
     global_attrs: Attrs, // global #[ts(...)] attributes
-    gen_guard: bool,     // generate type guard for this struct/enum
     ident: syn::Ident,   // name of enum struct
-    ts_generics: Vec<Option<(Ident, Bounds)>>, // None means a lifetime parameter
-    extra_guard: RefCell<Vec<QuoteT>>, // for generic verifier hack!
 }
 
 impl Drop for ParseContext {

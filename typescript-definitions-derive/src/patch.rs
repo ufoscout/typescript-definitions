@@ -129,11 +129,6 @@ pub fn patch(s: &str) -> Cow<'_, str> {
 }
 
 #[inline]
-pub fn eq() -> Literal {
-    Literal::string(&TRIPPLE_EQ[1..TRIPPLE_EQ.len() - 1])
-}
-
-#[inline]
 pub fn nl() -> Literal {
     Literal::string(&NL_PATCH[1..NL_PATCH.len() - 1])
 }

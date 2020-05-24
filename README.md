@@ -96,8 +96,6 @@ generate typescript [type guards](https://www.typescriptlang.org/docs/handbook/a
     }
 ```
 
-See [Type Guards](#type-guards) below.
-
 ---
 <!-- vscode-markdown-toc -->
 
@@ -411,54 +409,6 @@ pub struct Chrono {
 }
 ```
 
-## <a name='TypeGuards'></a>Type Guards
-
-See [type guards](https://www.typescriptlang.org/docs/handbook/advanced-types.html).
-
-`typescript-definitions` type guards provide a fail fast defensive check that a random json object agrees with the layout and types of a given `typescript-definitions`
-type.
-
-To enable them change your dependency to:
-
-```toml
-typescript-definitions = { version="^0.1.10", features=["type-guards"] }
-```
-
-With the feature *on* you can turn guard generation *off* for any struct/enum with the
-`#[ts(guard=false)]` attribute.
-
-If your struct has a long list of data as `Vec<data>` then you can prevent a type check of the entire array with a field attribute `#[ts(array_check="first")]`
-which will check only the first row.
-
-### Example
-
-```rust
-use serde::Serialize;
-use typescript_definitions::{TypeScriptify, TypeScriptifyTrait};
-#[derive(TypeScriptify)]
-pub struct Maybe {
-    maybe : Option<String>
-}
-
-println!("{}", Maybe::type_script_guard().unwrap());
-```
-
-will print (after passing through prettier):
-
-```typescript
-export const isMaybe = (obj: any): obj is Maybe => {
-  if (obj == undefined) return false;
-  if (obj.maybe === undefined) return false;
-  {
-    const val = obj.maybe;
-    if (!(val === null)) {
-      if (!(typeof val === "string")) return false;
-    }
-  }
-  return true;
-};
-```
-
 ## <a name='Limitations'></a>Limitations
 
 
@@ -496,8 +446,6 @@ You can short circuit any field with some attribute
 markup 
 
 * `ts_type` specify the serialization.
-* `ts_guard`: verify the type as if it was this
-  typescript type.
 
 
 ### <a name='LimitationsofGenerics'></a>Limitations of Generics
