@@ -226,7 +226,7 @@ impl Typescriptify {
         attrs.push_doc_comment(&input.attrs);
         attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
 
-        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize).expect("container was derived from AST");
 
         // must track this in case of errors so we can check them
         // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
@@ -251,7 +251,7 @@ impl Typescriptify {
             attrs
         };
 
-        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize);
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize).expect("container was derived from AST");
 
         let (typescript, pctxt) = {
             let pctxt = ParseContext {
@@ -402,7 +402,7 @@ fn last_path_element(path: &syn::Path) -> Option<TSType> {
         .iter()
         .map(|s| s.ident.clone())
         .collect::<Vec<_>>();
-    match path.segments.last().map(|p| p.into_value()) {
+    match path.segments.last() {
         Some(t) => {
             let ident = t.ident.clone();
             let args = match &t.arguments {
@@ -489,9 +489,9 @@ impl Drop for ParseContext {
 impl<'a> ParseContext {
     // Some helpers
 
-    fn err_msg(&self, msg: &str) {
+    fn err_msg<A: quote::ToTokens>(&self, tokens: A, msg: &str) {
         if let Some(ref ctxt) = self.ctxt {
-            ctxt.error(msg);
+            ctxt.error_spanned_by(tokens, msg);
         } else {
             panic!(msg.to_string())
         }
@@ -507,7 +507,7 @@ impl<'a> ParseContext {
             return match QuoteT::from_str(&s) {
                 Ok(tokens) => tokens,
                 Err(..) => {
-                    self.err_msg(&format!("{}: can't parse type {}", self.ident, s));
+                    self.err_msg(field.original, &format!("{}: can't parse type {}", self.ident, s));
                     quote!()
                 }
             };
@@ -552,7 +552,7 @@ impl<'a> ParseContext {
     fn check_flatten(&self, fields: &[&'a ast::Field<'a>], ast_container: &ast::Container) -> bool {
         let has_flatten = fields.iter().any(|f| f.attrs.flatten()); // .any(|f| f);
         if has_flatten {
-            self.err_msg(&format!(
+            self.err_msg(&self.ident, &format!(
                 "{}: #[serde(flatten)] does not work for typescript-definitions.",
                 ast_container.ident
             ));

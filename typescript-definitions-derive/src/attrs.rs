@@ -7,7 +7,7 @@
 // except according to those terms.
 
 use super::{ast, ident_from_str, Ctxt};
-use quote::quote;
+use quote::{quote, ToTokens};
 
 use proc_macro2::TokenStream;
 use syn::{Attribute, Ident, Lit, Meta, /* MetaList,*/ MetaNameValue, NestedMeta};
@@ -16,14 +16,11 @@ use syn::{Attribute, Ident, Lit, Meta, /* MetaList,*/ MetaNameValue, NestedMeta}
 pub struct Attrs {
     /// list of blocks of " * " prefixed comment lines
     comments: Vec<String>,
-    pub guard: bool,
-    pub only_first: bool,
     pub ts_type: Option<String>,
     pub ts_handler_name: Option<String>,
     pub ts_handler_return: Option<String>,
     pub ts_factory_name: Option<String>,
     pub ts_factory_return_name: Option<String>,
-    pub ts_guard: Option<String>,
     pub ts_as: Option<syn::Type>,
 }
 
@@ -48,10 +45,7 @@ impl Attrs {
         Attrs {
             comments: vec![],
             // turbofish: None,
-            guard: true,
-            only_first: false,
             ts_type: None,
-            ts_guard: None,
             ts_handler_name: None,
             ts_handler_return: None,
             ts_factory_name: None,
@@ -72,13 +66,7 @@ impl Attrs {
             .filter_map(|attr| {
                 use Lit::*;
                 use Meta::*;
-                if let NameValue(MetaNameValue {
-                    ident, lit: Str(s), ..
-                }) = attr
-                {
-                    if ident != "doc" {
-                        return None;
-                    }
+                if let NameValue(MetaNameValue { lit: Str(s), .. }) = attr {
                     let value = s.value();
                     let text = value
                         .trim_start_matches("//!")
@@ -119,9 +107,9 @@ impl Attrs {
         }
     }
 
-    fn err_msg<'a>(&self, msg: String, ctxt: Option<&'a Ctxt>) {
+    fn err_msg<'a, A: ToTokens>(&self, tokens: A, msg: String, ctxt: Option<&'a Ctxt>) {
         if let Some(ctxt) = ctxt {
-            ctxt.error(msg);
+            ctxt.error_spanned_by(tokens, msg);
         } else {
             panic!(msg)
         };
@@ -133,9 +121,9 @@ impl Attrs {
         use syn::Meta::*;
         use NestedMeta::*;
 
-        fn err(msg: String, ctxt: Option<&'_ Ctxt>) {
+        fn err<A: quote::ToTokens>(tokens: A, msg: String, ctxt: Option<&'_ Ctxt>) {
             if let Some(ctxt) = ctxt {
-                ctxt.error(format!("invalid typescript syntax: {}", msg));
+                ctxt.error_spanned_by(tokens, format!("invalid typescript syntax: {}", msg));
             } else {
                 panic!("invalid typescript syntax: {}", msg)
             };
@@ -147,7 +135,7 @@ impl Attrs {
                 "ts" => match attr.parse_meta() {
                     Ok(v) => Some(v),
                     Err(msg) => {
-                        err(msg.to_string(), ctxt);
+                        err(attr, msg.to_string(), ctxt);
                         None
                     }
                 },
@@ -156,7 +144,7 @@ impl Attrs {
             .filter_map(move |m| match m {
                 List(l) => Some(l.nested),
                 ref tokens => {
-                    err(quote!(#tokens).to_string(), ctxt);
+                    err(&m, quote!(#tokens).to_string(), ctxt);
                     None
                 }
             })
@@ -164,116 +152,59 @@ impl Attrs {
             .filter_map(move |m| match m {
                 Meta(m) => Some(m),
                 ref tokens => {
-                    err(quote!(#tokens).to_string(), ctxt);
+                    err(&m, quote!(#tokens).to_string(), ctxt);
                     None
                 }
             })
     }
-    pub fn push_attrs(&mut self, struct_ident: &Ident, attrs: &[Attribute], ctxt: Option<&Ctxt>) {
+    pub fn push_attrs(&mut self, _struct_ident: &Ident, attrs: &[Attribute], ctxt: Option<&Ctxt>) {
         use syn::Meta::*;
         use Lit::*;
         // use NestedMeta::*;
 
         for attr in Self::find_typescript(&attrs, ctxt) {
             match attr {
-                // #[ts(guard = true)]
-                NameValue(MetaNameValue {
-                    ref ident,
-                    lit: Bool(ref value),
-                    ..
-                }) if ident == "guard" => {
-                    self.guard = value.value;
-                }
-                // #[ts(guard = "true")]
-                NameValue(MetaNameValue {
-                    ref ident,
-                    lit: Str(ref value),
-                    ..
-                }) if ident == "guard" => {
-                    self.guard = match value.value().parse() {
-                        Ok(v) => v,
-                        Err(..) => {
-                            self.err_msg(
-                                format!(
-                                    "{}: guard must be true or false not \"{}\"",
-                                    struct_ident,
-                                    quote!(#value)
-                                ),
-                                ctxt,
-                            );
-                            false
-                        }
-                    }
-                }
                 // #[ts(handler_name = "HandleFooBar")]
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "handler_name" => self.ts_handler_name = Some(value.value()),
+                }) if is_path_ident(path, "handler_name") => {
+                    self.ts_handler_name = Some(value.value())
+                }
                 // #[ts(handler_return = "boolean")]
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "handler_return" => self.ts_handler_return = Some(value.value()),
+                }) if is_path_ident(path, "handler_return") => {
+                    self.ts_handler_return = Some(value.value())
+                }
                 // #[ts(factory_name = "FooBar")]
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "factory_name" => self.ts_factory_name = Some(value.value()),
+                }) if is_path_ident(path, "factory_name") => {
+                    self.ts_factory_name = Some(value.value())
+                }
                 // #[ts(factory_return_name = "FooBar")]
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "factory_return_name" => {
+                }) if is_path_ident(path, "factory_return_name") => {
                     self.ts_factory_return_name = Some(value.value())
                 }
-                // #[ts(guard)]
-                Word(ref w) if w == "guard" => self.guard = true,
-                // List(MetaList {
-                //     ref ident,
-                //     ref nested,
-                //     ..
-                // }) if ident == "isa" => {
-                //     for method in nested {
-                //         match *method {
-                //             Meta(NameValue(MetaNameValue {
-                //                 ref ident,
-                //                 lit: Str(ref v),
-                //                 ..
-                //             })) => match v.value().parse::<TokenStream>() {
-                //                 Ok(t) => {
-                //                     self.isa.insert(ident.to_string(), quote!(#t));
-                //                 }
-                //                 Err(_) => self.err_msg(format!("Can't parse {}", quote!(#v)), ctxt),
-                //             },
-                //             ref mi @ _ => panic!("unsupported raw entry: {}", quote!(#mi)),
-                //         }
-                //     }
-                // }
-                // NameValue(MetaNameValue {
-                //     ref ident,
-                //     lit: Str(ref value),
-                //     ..
-                // }) if ident == "turbofish" => {
-                //     let v = value.value();
-                //     match turbofish_check(&v) {
-                //         Err(msg) => self.err_msg(msg, ctxt),
-                //         Ok(tokens) => self.turbofish = Some(tokens),
-                //     }
-                // }
-                ref i @ NameValue(..) | ref i @ List(..) | ref i @ Word(..) => {
-                    self.err_msg(format!("unsupported option: {}", quote!(#i)), ctxt);
+                ref i @ NameValue(..) | ref i @ List(..) | ref i @ Path(..) => {
+                    self.err_msg(i, format!("unsupported option: {}", quote!(#i)), ctxt);
                 }
             }
         }
     }
     pub fn push_field_attrs(
         &mut self,
-        struct_ident: &Ident,
+        _struct_ident: &Ident,
         attrs: &[Attribute],
         ctxt: Option<&Ctxt>,
     ) {
@@ -284,32 +215,25 @@ impl Attrs {
         for attr in Self::find_typescript(&attrs, ctxt) {
             match attr {
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "ts_type" => {
+                }) if is_path_ident(path, "ts_type") => {
                     let v = value.value();
 
                     self.ts_type = Some(v);
                 }
                 NameValue(MetaNameValue {
-                    ref ident,
+                    ref path,
                     lit: Str(ref value),
                     ..
-                }) if ident == "ts_guard" => {
-                    let v = value.value();
-                    self.ts_guard = Some(v);
-                }
-                NameValue(MetaNameValue {
-                    ref ident,
-                    lit: Str(ref value),
-                    ..
-                }) if ident == "ts_as" => {
+                }) if is_path_ident(path, "ts_as") => {
                     let v = value.value();
                     match syn::parse_str::<syn::Type>(&v) {
                         Ok(t) => self.ts_as = Some(t),
                         Err(..) => {
                             self.err_msg(
+                                attr,
                                 format!("ts_as: \"{}\" is not a valid rust type", v),
                                 ctxt,
                             );
@@ -317,31 +241,9 @@ impl Attrs {
                     }
                     //
                 }
-                NameValue(MetaNameValue {
-                    ref ident,
-                    lit: Str(ref value),
-                    ..
-                }) if ident == "array_check" => {
-                    self.only_first = match value.value().as_ref() {
-                        "first" => true,
-                        "all" => false,
-                        _ => {
-                            self.err_msg(
-                                format!(
-                                    r#"{}: array_check value must be "first" or "all" not "{}""#,
-                                    struct_ident,
-                                    quote!(#value)
-                                ),
-                                ctxt,
-                            );
-                            false
-                        }
-                    }
-                }
-                Word(ref w) if w == "array_check" => self.only_first = true,
 
-                ref i @ NameValue(..) | ref i @ List(..) | ref i @ Word(..) => {
-                    self.err_msg(format!("unsupported option: {}", quote!(#i)), ctxt);
+                ref i @ NameValue(..) | ref i @ List(..) | ref i @ Path(..) => {
+                    self.err_msg(i, format!("unsupported option: {}", quote!(#i)), ctxt);
                 }
             }
         }
@@ -355,5 +257,13 @@ impl Attrs {
             res.push_field_attrs(&id, &field.original.attrs, ctxt);
         }
         res
+    }
+}
+
+fn is_path_ident(path: &syn::Path, test: &str) -> bool {
+    if let Some(ref ident) = path.get_ident() {
+        &format!("{}", ident) == test
+    } else {
+        false
     }
 }

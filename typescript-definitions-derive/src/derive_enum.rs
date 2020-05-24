@@ -11,7 +11,7 @@ use super::{filter_visible, ident_from_str, ParseContext, QuoteMaker, QuoteMaker
 use crate::patch::tsignore;
 use proc_macro2::Literal;
 use quote::quote;
-use serde_derive_internals::{ast, ast::Variant, attr::EnumTag};
+use serde_derive_internals::{ast, ast::Variant, attr::TagType};
 const CONTENT: &str = "fields"; // default content tag
                                 // const TAG: &'static str = "kind"; // default tag tag
 struct TagInfo<'a> {
@@ -23,24 +23,24 @@ struct TagInfo<'a> {
     untagged: bool,
 }
 impl<'a> TagInfo<'a> {
-    fn from_enum(e: &'a EnumTag) -> Self {
+    fn from_enum(e: &'a TagType) -> Self {
         match e {
-            EnumTag::Internal { tag, .. } => TagInfo {
+            TagType::Internal { tag, .. } => TagInfo {
                 tag: Some(tag),
                 content: None,
                 untagged: false,
             },
-            EnumTag::Adjacent { tag, content, .. } => TagInfo {
+            TagType::Adjacent { tag, content, .. } => TagInfo {
                 tag: Some(tag),
                 content: Some(&content),
                 untagged: false,
             },
-            EnumTag::External => TagInfo {
+            TagType::External => TagInfo {
                 tag: None,
                 content: None,
                 untagged: false,
             },
-            EnumTag::None => TagInfo {
+            TagType::None => TagInfo {
                 tag: None,
                 content: None,
                 untagged: true,
@@ -384,7 +384,7 @@ impl<'a> ParseContext {
                     .map(|field| field.attrs.name().serialize_name())
                     .collect::<HashSet<_>>();
                 if fnames.contains(tag_str) {
-                    cx.error(format!(
+                    cx.error_spanned_by(tag_str, format!(
                         "clash with field in \"{}::{}\". \
                          Maybe use a #[serde(content=\"...\")] attribute.",
                         ast_container.ident, variant_name

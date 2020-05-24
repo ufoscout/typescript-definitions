@@ -6,9 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 use super::{
-    ident_from_str, is_bytes, last_path_element, return_type, FieldContext, QuoteT, TSType,
+    is_bytes, last_path_element, FieldContext, QuoteT, TSType,
 };
-use proc_macro2::Ident;
 use quote::quote;
 
 impl<'a> FieldContext<'a> {
@@ -111,7 +110,7 @@ impl<'a> FieldContext<'a> {
 
         use syn::Type::*;
         use syn::{
-            BareFnArgName, TypeArray, TypeBareFn, TypeGroup, TypeImplTrait, TypeParamBound,
+            TypeArray, TypeBareFn, TypeGroup, TypeImplTrait, TypeParamBound,
             TypeParen, TypePath, TypePtr, TypeReference, TypeSlice, TypeTraitObject, TypeTuple,
         };
         match ty {
@@ -120,31 +119,9 @@ impl<'a> FieldContext<'a> {
             | Ptr(TypePtr { elem, .. }) => self.type_to_array(elem),
             Reference(TypeReference { elem, .. }) => self.type_to_ts(elem),
             // fn(a: A,b: B, c:C) -> D
-            BareFn(TypeBareFn { output, inputs, .. }) => {
-                let mut args: Vec<Ident> = Vec::with_capacity(inputs.len());
-                let mut typs: Vec<&syn::Type> = Vec::with_capacity(inputs.len());
-
-                for (idx, t) in inputs.iter().enumerate() {
-                    let i = match t.name {
-                        Some((ref n, _)) => match n {
-                            BareFnArgName::Named(m) => m.clone(),
-                            _ => ident_from_str("_"), // Wild token '_'
-                        },
-                        _ => ident_from_str(&format!("_dummy{}", idx)),
-                    };
-                    args.push(i);
-                    typs.push(&t.ty); // TODO: check type is known
-                }
-                // typescript lambda (a: A, b:B) => C
-
-                // let typs = typs.iter().map(|ty| self.type_to_ts(ty));
-                let typs = self.derive_syn_types_ptr(&typs);
-                if let Some(ref rt) = return_type(&output) {
-                    let rt = self.type_to_ts(rt);
-                    quote! { ( #(#args: #typs),* ) => #rt }
-                } else {
-                    quote! { ( #(#args: #typs),* ) => undefined}
-                }
+            BareFn(TypeBareFn { inputs, .. }) => {
+                self.ctxt.err_msg(inputs, "we do not support TypeScriptifying functions");
+                quote!(any)
             }
             Never(..) => quote! { never },
             Tuple(TypeTuple { elems, .. }) => {
@@ -174,15 +151,10 @@ impl<'a> FieldContext<'a> {
                 let tp = self.type_to_ts(elem);
                 quote! { ( #tp ) }
             }
-            Infer(..) | Macro(..) | Verbatim(..) => quote! { any },
+            Infer(..) | Macro(..) | Verbatim(..) | __Nonexhaustive => quote! { any },
         }
     }
-    pub fn derive_syn_types_ptr(
-        &'a self,
-        types: &'a [&'a syn::Type],
-    ) -> impl Iterator<Item = QuoteT> + 'a {
-        types.iter().map(move |ty| self.type_to_ts(ty))
-    }
+
     pub fn derive_syn_types(&'a self, types: &'a [syn::Type]) -> impl Iterator<Item = QuoteT> + 'a {
         types.iter().map(move |ty| self.type_to_ts(ty))
     }
