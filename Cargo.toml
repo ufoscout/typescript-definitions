@@ -14,7 +14,7 @@ exclude = ['scripts/*', 'templates/*' ]
 
 [dependencies]
 serde = "1.0"
-typescript-definitions-derive = { version = "0.1.10",  path = "typescript-definitions-derive" }
+typescript-definitions-derive = { version = "0.1.10",  path = "typescript-definitions-derive-watt" }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -31,10 +31,8 @@ arrayvec = { version="0.5.1", features = ["serde"] }
 
 
 [features]
-export-typescript = ["typescript-definitions-derive/export-typescript"]
 test = ["typescript-definitions-derive/test"]
-type-enum-factories = ["typescript-definitions-derive/type-enum-factories"]
-type-enum-handlers = ["typescript-definitions-derive/type-enum-handlers"]
+export-typescript = []
 
 # [workspace]
 # exclude = ["example"]

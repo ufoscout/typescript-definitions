@@ -66,53 +66,24 @@ fn is_wasm32() -> bool {
     false
 }
 
-// derive proc_macro to expose Typescript definitions to `wasm-bindgen`.
-//
-// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
-cfg_if! {
-    if #[cfg(any(debug_assertions, feature = "export-typescript"))] {
-
-        #[proc_macro_derive(TypeScriptDefinition, attributes(ts))]
-        pub fn derive_typescript_definition(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-
-            if !(is_wasm32() || cfg!(feature="test")) {
-                return proc_macro::TokenStream::new();
-            }
-
-            let input = QuoteT::from(input);
-            do_derive_typescript_definition(input).into()
-        }
-    } else {
-
-        #[proc_macro_derive(TypeScriptDefinition, attributes(ts))]
-        pub fn derive_typescript_definition(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-            proc_macro::TokenStream::new()
-        }
-    }
+/// derive proc_macro to expose Typescript definitions to `wasm-bindgen`.
+///
+/// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
+#[proc_macro_derive(TypeScriptDefinition, attributes(ts))]
+pub fn derive_typescript_definition(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = QuoteT::from(input);
+    do_derive_typescript_definition(input).into()
 }
 
-// derive proc_macro to expose Typescript definitions as a static function.
-//
-// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
-cfg_if! {
-    if #[cfg(any(debug_assertions, feature = "export-typescript"))] {
-
-        #[proc_macro_derive(TypeScriptify, attributes(ts))]
-        pub fn derive_type_script_ify(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-            let input = QuoteT::from(input);
-            do_derive_type_script_ify(input).into()
-
-        }
-    } else {
-
-        #[proc_macro_derive(TypeScriptify, attributes(ts))]
-        pub fn derive_type_script_ify(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-            proc_macro::TokenStream::new()
-        }
-    }
+/// derive proc_macro to expose Typescript definitions as a static function.
+///
+/// Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions).
+#[proc_macro_derive(TypeScriptify, attributes(ts))]
+pub fn derive_type_script_ify(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = QuoteT::from(input);
+    do_derive_type_script_ify(input).into()
 }
 
-#[allow(unused)]
 fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
     let tsy = Typescriptify::new(input);
     let parsed = tsy.parse();
@@ -153,7 +124,6 @@ fn do_derive_typescript_definition(input: QuoteT) -> QuoteT {
     q
 }
 
-#[allow(unused)]
 fn do_derive_type_script_ify(input: QuoteT) -> QuoteT {
     let tsy = Typescriptify::new(input);
     let parsed = tsy.parse();
@@ -226,7 +196,8 @@ impl Typescriptify {
         attrs.push_doc_comment(&input.attrs);
         attrs.push_attrs(&input.ident, &input.attrs, Some(&cx));
 
-        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize).expect("container was derived from AST");
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize)
+            .expect("container was derived from AST");
 
         // must track this in case of errors so we can check them
         // if we don't consume the errors, we'll get an "unhandled errors" panic whether or not there were errors
@@ -251,7 +222,8 @@ impl Typescriptify {
             attrs
         };
 
-        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize).expect("container was derived from AST");
+        let container = ast::Container::from_ast(&cx, &input, Derive::Serialize)
+            .expect("container was derived from AST");
 
         let (typescript, pctxt) = {
             let pctxt = ParseContext {
@@ -507,7 +479,10 @@ impl<'a> ParseContext {
             return match QuoteT::from_str(&s) {
                 Ok(tokens) => tokens,
                 Err(..) => {
-                    self.err_msg(field.original, &format!("{}: can't parse type {}", self.ident, s));
+                    self.err_msg(
+                        field.original,
+                        &format!("{}: can't parse type {}", self.ident, s),
+                    );
                     quote!()
                 }
             };
@@ -552,10 +527,13 @@ impl<'a> ParseContext {
     fn check_flatten(&self, fields: &[&'a ast::Field<'a>], ast_container: &ast::Container) -> bool {
         let has_flatten = fields.iter().any(|f| f.attrs.flatten()); // .any(|f| f);
         if has_flatten {
-            self.err_msg(&self.ident, &format!(
-                "{}: #[serde(flatten)] does not work for typescript-definitions.",
-                ast_container.ident
-            ));
+            self.err_msg(
+                &self.ident,
+                &format!(
+                    "{}: #[serde(flatten)] does not work for typescript-definitions.",
+                    ast_container.ident
+                ),
+            );
         };
         has_flatten
     }
