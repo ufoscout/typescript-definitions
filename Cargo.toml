@@ -32,7 +32,7 @@ arrayvec = { version="0.5.1", features = ["serde"] }
 
 [features]
 test = ["typescript-definitions-derive/test"]
-export-typescript = []
+export-typescript = ["typescript-definitions-derive/export-typescript"]
 
 # [workspace]
 # exclude = ["example"]

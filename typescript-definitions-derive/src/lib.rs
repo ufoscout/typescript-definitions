@@ -11,8 +11,6 @@
 //! Please see documentation at [crates.io](https://crates.io/crates/typescript-definitions)
 
 extern crate proc_macro;
-#[macro_use]
-extern crate cfg_if;
 use quote::quote;
 use serde_derive_internals::{ast, Ctxt, Derive};
 use syn::DeriveInput;
