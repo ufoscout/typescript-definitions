@@ -48,6 +48,7 @@ impl<'a> ParseContext<'_> {
             body: self.field_to_ts(field),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 
@@ -62,6 +63,7 @@ impl<'a> ParseContext<'_> {
             body: quote!({}),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 
@@ -93,9 +95,10 @@ impl<'a> ParseContext<'_> {
         };
 
         QuoteMaker {
-            body: quote!({ #(#content);* }),
+            body: quote!({ #(#content);*; }),
             verify,
             is_enum: false,
+            is_interface: true,
         }
     }
 
@@ -134,6 +137,7 @@ impl<'a> ParseContext<'_> {
             body: quote!([#(#content),*]),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 }
