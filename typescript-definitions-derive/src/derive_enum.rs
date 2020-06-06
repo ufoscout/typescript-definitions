@@ -91,6 +91,7 @@ impl<'a> ParseContext<'_> {
                 body: quote! ( { #(#k = #v),* } ),
                 verify,
                 is_enum: true,
+                is_interface: false,
             };
         }
 
@@ -132,6 +133,7 @@ impl<'a> ParseContext<'_> {
             body: quote! ( #( #nl | #body)* ),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
     fn derive_unit_variant(&self, taginfo: &TagInfo, variant: &Variant) -> QuoteMaker {
@@ -153,6 +155,7 @@ impl<'a> ParseContext<'_> {
                 body: quote!(#variant_name),
                 verify,
                 is_enum: false,
+                is_interface: false,
             };
         }
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -172,6 +175,7 @@ impl<'a> ParseContext<'_> {
             ),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 
@@ -201,6 +205,7 @@ impl<'a> ParseContext<'_> {
                     body: quote! ( #ty ),
                     verify,
                     is_enum: false,
+                    is_interface: false,
                 };
             };
             let tag = ident_from_str(&variant_name);
@@ -229,6 +234,7 @@ impl<'a> ParseContext<'_> {
                 ),
                 verify,
                 is_enum: false,
+                is_interface: false,
             };
         };
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -259,6 +265,7 @@ impl<'a> ParseContext<'_> {
             ),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 
@@ -302,6 +309,7 @@ impl<'a> ParseContext<'_> {
                     ),
                     verify,
                     is_enum: false,
+                    is_interface: false,
                 };
             };
             let v = &quote!(v);
@@ -326,6 +334,7 @@ impl<'a> ParseContext<'_> {
                 ),
                 verify,
                 is_enum: false,
+                is_interface: false,
             };
         }
         let tag_str = taginfo.tag.unwrap();
@@ -358,6 +367,7 @@ impl<'a> ParseContext<'_> {
                 ),
                 verify,
                 is_enum: false,
+                is_interface: false,
             }
         } else {
             if let Some(ref cx) = self.ctxt {
@@ -393,6 +403,7 @@ impl<'a> ParseContext<'_> {
                 ),
                 verify,
                 is_enum: false,
+                is_interface: false,
             }
         }
     }
@@ -434,6 +445,7 @@ impl<'a> ParseContext<'_> {
                     ),
                     verify,
                     is_enum: false,
+                    is_interface: false,
                 };
             }
             let tag = ident_from_str(&variant_name);
@@ -459,6 +471,7 @@ impl<'a> ParseContext<'_> {
                 ),
                 verify,
                 is_enum: false,
+                is_interface: false,
             };
         };
 
@@ -491,6 +504,7 @@ impl<'a> ParseContext<'_> {
             ),
             verify,
             is_enum: false,
+            is_interface: false,
         }
     }
 }

@@ -46,6 +46,7 @@ struct QuoteMaker {
     pub body: QuoteT,
     pub verify: Option<QuoteT>,
     pub is_enum: bool,
+    pub is_interface: bool
 }
 #[allow(unused)]
 fn is_wasm32() -> bool {
@@ -200,7 +201,14 @@ impl Typescriptify {
     fn wasm_string(&self) -> String {
         if self.body.is_enum {
             format!(
-                "{}export enum {} {};",
+                "{}export enum {} {}",
+                self.ctxt.global_attrs.to_comment_str(),
+                self.ts_ident_str(),
+                self.ts_body_str()
+            )
+        } else if self.body.is_interface {
+            format!(
+                "{}export interface {} {}",
                 self.ctxt.global_attrs.to_comment_str(),
                 self.ts_ident_str(),
                 self.ts_body_str()
