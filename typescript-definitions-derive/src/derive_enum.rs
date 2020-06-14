@@ -206,14 +206,22 @@ impl<'a> ParseContext {
             .as_ref()
             .ok_or("serde tag must be specified to create enum handler")
             .and_then(|tag_key| -> Result<QuoteT, &'static str> {
-                let args = content.iter().map(|(_, q)|
+                let mut conflict_aliases = Vec::new();
+                let (args, variant_types): (Vec<_>, Vec<_>) = content.iter().map(|(v, q)|
                     q.inner_type
                     .as_ref()
-                    .map(|inner_type|
-                        quote!(message: #inner_type)
-                    ).unwrap_or(
-                        quote!()
-                    ));
+                    .map(|inner_type| {
+                        let variant_name = &v.ident;
+                        if format!("{}", variant_name) == format!("{}", inner_type) {
+                            let variant_inner_type = ident_from_str(&format!("_{}", variant_name));
+                            conflict_aliases.push(quote!(type #variant_inner_type = #inner_type;));
+                            (quote!(message: #inner_type), quote!(export type #variant_name = #variant_inner_type;))
+                        } else {
+                            (quote!(message: #inner_type), quote!(export type #variant_name = #inner_type;))
+                        }
+                    }).unwrap_or(
+                        (quote!(), quote!())
+                    )).unzip();
                 let on_tag_name = variants.iter().map(|v| ident_from_str(&format!("on{}",(v.ident.to_string()))));
                 let tag_key_dq_1 = Literal::string(tag_key);
                 let ret_type_1 = ident_from_str(
@@ -227,6 +235,7 @@ impl<'a> ParseContext {
 
                 let newls = std::iter::repeat(quote!(#newl));
                 let newls2 = std::iter::repeat(quote!(#newl));
+                let newls3 = std::iter::repeat(quote!(#newl));
                 let handle_prefix_dq_1 = Literal::string("on");
 
                 let type_ident = super::patch(&self.ident.to_string()).to_string();
@@ -242,20 +251,23 @@ impl<'a> ParseContext {
                 let access_input_content_1 = taginfo.content.map(|content_key| quote!(input[#content_key])).unwrap_or(quote!(input));
 
                 // type EnumType_VariantName = { ... };
-                let variant_types = content.iter().map(|(v, q)|
-                    q.inner_type
-                    .as_ref()
-                    .map(|inner_type|{
-                        let variant_name = ident_from_str(&format!("{}_{}", type_ident, v.ident));
-                        quote!(export type #variant_name = #inner_type;)
-                    }).unwrap_or(
-                        quote!()
-                    ));
+                // let variant_types = content.iter().map(|(v, q)|
+                //     q.inner_type
+                //     .as_ref()
+                //     .map(|inner_type|{
+                //         let variant_name = ident_from_str(&format!("{}_{}", type_ident, v.ident));
+                //         quote!(export namespace #variant_name = #inner_type;)
+                //     }).unwrap_or(
+                //         quote!()
+                //     ));
 
                 Ok(quote!(export interface #export_interface_1 {
                         #( #newls  #on_tag_name(#args): #ret_type;)*#newl
                     }#newl
-                    #( #newls2 #variant_types)*#newl
+                    #(#newls2 #conflict_aliases)*#newl
+                    export namespace #ident_1 {
+                        #( #newls3 #variant_types )*#newl
+                    }
                     export function #apply_ident_1(handler: #export_interface_1): (input: #ident_1) => #ret_type_1 {#newl
                         #tsignore
                         return input => handler[#handle_prefix_dq_1 + input[#tag_key_dq_1]](#access_input_content_1);#newl
