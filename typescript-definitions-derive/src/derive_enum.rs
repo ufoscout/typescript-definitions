@@ -226,6 +226,7 @@ impl<'a> ParseContext {
                 let ret_type = std::iter::repeat(ret_type_1.clone());
 
                 let newls = std::iter::repeat(quote!(#newl));
+                let newls2 = std::iter::repeat(quote!(#newl));
                 let handle_prefix_dq_1 = Literal::string("on");
 
                 let type_ident = super::patch(&self.ident.to_string()).to_string();
@@ -240,9 +241,21 @@ impl<'a> ParseContext {
                 let apply_ident_1 = ident_from_str(&format!("apply{}", &type_ident));
                 let access_input_content_1 = taginfo.content.map(|content_key| quote!(input[#content_key])).unwrap_or(quote!(input));
 
+                // type EnumType_VariantName = { ... };
+                let variant_types = content.iter().map(|(v, q)|
+                    q.inner_type
+                    .as_ref()
+                    .map(|inner_type|{
+                        let variant_name = ident_from_str(&format!("{}_{}", type_ident, v.ident));
+                        quote!(export type #variant_name = #inner_type;)
+                    }).unwrap_or(
+                        quote!()
+                    ));
+
                 Ok(quote!(export interface #export_interface_1 {
                         #( #newls  #on_tag_name(#args): #ret_type;)*#newl
                     }#newl
+                    #( #newls2 #variant_types)*#newl
                     export function #apply_ident_1(handler: #export_interface_1): (input: #ident_1) => #ret_type_1 {#newl
                         #tsignore
                         return input => handler[#handle_prefix_dq_1 + input[#tag_key_dq_1]](#access_input_content_1);#newl
@@ -384,11 +397,14 @@ impl<'a> ParseContext {
                     .map(|field| field.attrs.name().serialize_name())
                     .collect::<HashSet<_>>();
                 if fnames.contains(tag_str) {
-                    cx.error_spanned_by(tag_str, format!(
-                        "clash with field in \"{}::{}\". \
+                    cx.error_spanned_by(
+                        tag_str,
+                        format!(
+                            "clash with field in \"{}::{}\". \
                          Maybe use a #[serde(content=\"...\")] attribute.",
-                        ast_container.ident, variant_name
-                    ));
+                            ast_container.ident, variant_name
+                        ),
+                    );
                 }
             };
             // spread together tagged no content
