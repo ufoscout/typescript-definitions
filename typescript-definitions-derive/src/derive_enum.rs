@@ -136,7 +136,7 @@ impl<'a> ParseContext {
                 let has_args = content.iter().map(|(_, q)| q.inner_type.is_some());
                 let ret_constructs = content.iter().zip(has_args).map(
                     |((v, _), has_args): (&(&Variant, VariantQuoteMaker), bool)| {
-                        let tag_name_str = Literal::string(&v.ident.to_string());
+                        let tag_name_str = Literal::string(&self.variant_name(v));
                         let tag_key_str = Literal::string(tag_key);
                         if has_args {
                             taginfo
@@ -211,18 +211,18 @@ impl<'a> ParseContext {
                     q.inner_type
                     .as_ref()
                     .map(|inner_type| {
-                        let variant_name = &v.ident;
-                        if format!("{}", variant_name) == format!("{}", inner_type) {
-                            let variant_inner_type = ident_from_str(&format!("_{}", variant_name));
+                        let variant_ident = &v.ident;
+                        if format!("{}", variant_ident) == format!("{}", inner_type) {
+                            let variant_inner_type = ident_from_str(&format!("_{}", variant_ident));
                             conflict_aliases.push(quote!(type #variant_inner_type = #inner_type;));
-                            (quote!(message: #inner_type), quote!(export type #variant_name = #variant_inner_type;))
+                            (quote!(message: #inner_type), quote!(export type #variant_ident = #variant_inner_type;))
                         } else {
-                            (quote!(message: #inner_type), quote!(export type #variant_name = #inner_type;))
+                            (quote!(message: #inner_type), quote!(export type #variant_ident = #inner_type;))
                         }
                     }).unwrap_or(
                         (quote!(), quote!())
                     )).unzip();
-                let on_tag_name = variants.iter().map(|v| ident_from_str(&format!("on{}",(v.ident.to_string()))));
+                let on_tag_name = variants.iter().map(|v| ident_from_str(&format!("on{}",(self.variant_name(v)))));
                 let tag_key_dq_1 = Literal::string(tag_key);
                 let ret_type_1 = ident_from_str(
                     self.global_attrs
