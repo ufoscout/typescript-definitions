@@ -58,6 +58,7 @@ struct VariantQuoteMaker {
     pub inner_type: Option<QuoteT>,
 }
 
+#[allow(clippy::or_fun_call)]
 impl<'a> ParseContext {
     pub(crate) fn derive_enum(
         &self,
@@ -68,7 +69,7 @@ impl<'a> ParseContext {
         let taginfo = TagInfo::from_enum(ast_container.attrs.tag());
         // remove skipped ( check for #[serde(skip)] )
         let variants: Vec<&ast::Variant<'a>> = variants
-            .into_iter()
+            .iter()
             .filter(|v| !v.attrs.skip_serializing())
             .collect();
 
@@ -321,7 +322,7 @@ impl<'a> ParseContext {
             if taginfo.untagged {
                 return VariantQuoteMaker {
                     source: quote! ( #ty ),
-                    inner_type: Some(ty.clone()),
+                    inner_type: Some(ty),
                 };
             };
             let tag = ident_from_str(&variant_name);
@@ -331,7 +332,7 @@ impl<'a> ParseContext {
                     { #tag : #ty }
 
                 ),
-                inner_type: Some(ty.clone()),
+                inner_type: Some(ty),
             };
         };
         let tag = ident_from_str(taginfo.tag.unwrap());
@@ -346,7 +347,7 @@ impl<'a> ParseContext {
             source: quote! (
                 { #tag: #variant_name; #content: #ty }
             ),
-            inner_type: Some(ty.clone()),
+            inner_type: Some(ty),
         }
     }
 
@@ -379,7 +380,7 @@ impl<'a> ParseContext {
             if taginfo.untagged {
                 return VariantQuoteMaker {
                     source: quote!(#ty),
-                    inner_type: Some(ty.clone()),
+                    inner_type: Some(ty),
                 };
             };
             let tag = ident_from_str(&variant_name);
@@ -387,7 +388,7 @@ impl<'a> ParseContext {
                 source: quote! (
                     { #tag : #ty  }
                 ),
-                inner_type: Some(ty.clone()),
+                inner_type: Some(ty),
             };
         }
         let tag_str = taginfo.tag.unwrap();
@@ -400,7 +401,7 @@ impl<'a> ParseContext {
                 source: quote! (
                     { #tag: #variant_name; #content: #ty }
                 ),
-                inner_type: Some(ty.clone()),
+                inner_type: Some(ty),
             }
         } else {
             if let Some(ref cx) = self.ctxt {
@@ -424,7 +425,7 @@ impl<'a> ParseContext {
                 source: quote! (
                     { #tag: #variant_name; #ty_inner }
                 ),
-                inner_type: Some(ty.clone()),
+                inner_type: Some(ty),
             }
         }
     }
@@ -450,13 +451,13 @@ impl<'a> ParseContext {
             if taginfo.untagged {
                 return VariantQuoteMaker {
                     source: quote! (#ty),
-                    inner_type: Some(ty.clone()),
+                    inner_type: Some(ty),
                 };
             }
             let tag = ident_from_str(&variant_name);
             return VariantQuoteMaker {
                 source: quote! ({ #tag : #ty }),
-                inner_type: Some(ty.clone()),
+                inner_type: Some(ty),
             };
         };
 
@@ -471,7 +472,7 @@ impl<'a> ParseContext {
             source: quote! (
             { #tag: #variant_name; #content : #ty }
             ),
-            inner_type: Some(ty.clone()),
+            inner_type: Some(ty),
         }
     }
 }

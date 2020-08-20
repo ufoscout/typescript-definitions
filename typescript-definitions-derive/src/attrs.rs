@@ -262,7 +262,7 @@ impl Attrs {
 
 fn is_path_ident(path: &syn::Path, test: &str) -> bool {
     if let Some(ref ident) = path.get_ident() {
-        &format!("{}", ident) == test
+        format!("{}", ident) == *test
     } else {
         false
     }

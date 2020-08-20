@@ -51,9 +51,8 @@ enum QuoteMakerKind {
 #[allow(unused)]
 fn is_wasm32() -> bool {
     use std::env;
-    match env::var("WASM32") {
-        Ok(ref v) => return v == "1",
-        _ => {}
+    if let Ok(ref v) = env::var("WASM32") {
+        return v == "1";
     }
     let mut t = env::args().skip_while(|t| t != "--target").skip(1);
     if let Some(target) = t.next() {
@@ -203,7 +202,7 @@ impl Typescriptify {
 
         Self {
             generics: container.generics.clone(),
-            ident: container.ident.clone(),
+            ident: container.ident,
             input,
         }
     }
@@ -242,7 +241,7 @@ impl Typescriptify {
         };
 
         TSOutput {
-            ident: patch(&container.ident.clone().to_string()).into(),
+            ident: patch(&container.ident.to_string()).into(),
             pctxt,
             q_maker: typescript,
         }
