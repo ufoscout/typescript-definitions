@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use super::patch::{eq, nl};
-use failure::{Error, Fail};
+use thiserror::Error;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
@@ -15,8 +15,8 @@ pub fn ident_from_str(s: &str) -> Ident {
     syn::Ident::new(s, Span::call_site())
 }
 
-#[derive(Fail, Debug)]
-#[fail(display = "{}", _0)]
+#[derive(Error, Debug)]
+#[error("{_0}")]
 pub struct TypescriptParseError(pest::error::Error<Rule>);
 
 impl TypescriptParseError {
@@ -58,11 +58,11 @@ impl Typescript {
     pub fn with_first(only_first: bool) -> Self {
         Typescript { only_first, var: 0 }
     }
-    pub fn verify(typescript: &str) -> Result<pest::iterators::Pairs<'_, Rule>, Error> {
+    pub fn verify(typescript: &str) -> Result<pest::iterators::Pairs<'_, Rule>, TypescriptParseError> {
         Ok(TypescriptParser::parse(Rule::typescript, typescript).map_err(TypescriptParseError)?)
     }
 
-    pub fn parse(&mut self, obj: &TokenStream, typescript: &str) -> Result<TokenStream, Error> {
+    pub fn parse(&mut self, obj: &TokenStream, typescript: &str) -> Result<TokenStream, TypescriptParseError> {
         let pair = TypescriptParser::parse(Rule::typescript, typescript)
             .map_err(TypescriptParseError)?
             .next() // skip SOI
@@ -100,7 +100,7 @@ impl Typescript {
             }
         ))
     }
-    fn parse_expr<'a>(&mut self, obj: &TokenStream, expr: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_expr<'a>(&mut self, obj: &TokenStream, expr: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         // expr = { union | "(" ~ expr ~ ")" }
 
         let mut content = vec![];
@@ -134,7 +134,7 @@ impl Typescript {
             need_undef: n,
         })
     }
-    fn parse_item<'a>(&mut self, obj: &TokenStream, item: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_item<'a>(&mut self, obj: &TokenStream, item: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         let mut i = item.into_inner();
         // item = { singleton ~ array  }
         let (singleton, array) = (i.next().unwrap(), i.next().unwrap());
@@ -212,7 +212,7 @@ impl Typescript {
             })
         }
     }
-    fn parse_typ<'a>(&mut self, obj: &TokenStream, typ: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_typ<'a>(&mut self, obj: &TokenStream, typ: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         // typ = { "number" | "object" | "string" | "boolean" | "null" }
         let typ = typ.as_str();
         let eq = eq();
@@ -223,7 +223,7 @@ impl Typescript {
             need_undef: false,
         })
     }
-    fn parse_map<'a>(&mut self, obj: &TokenStream, map: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_map<'a>(&mut self, obj: &TokenStream, map: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         // map = {  "{" ~ "[" ~ "key" ~ ":" ~ key ~ "]" ~ ":" ~ expr ~ "}" }
         let mut i = map.into_inner();
         let (typ, expr) = (i.next().unwrap(), i.next().unwrap());
@@ -269,7 +269,7 @@ impl Typescript {
         &mut self,
         obj: &TokenStream,
         union: Pair<'a, Rule>,
-    ) -> Result<(Ret, usize), Error> {
+    ) -> Result<(Ret, usize), TypescriptParseError> {
         // union = {   item ~ ("|" ~ item)*  }
         let mut results = vec![];
         // let val = self.pushvar();
@@ -309,7 +309,7 @@ impl Typescript {
             n,
         ))
     }
-    fn parse_tuple<'a>(&mut self, obj: &TokenStream, tuple: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_tuple<'a>(&mut self, obj: &TokenStream, tuple: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         // tuple = { "[" ~ expr ~ ("," ~ expr )+ ~ "]" }
         let mut content = vec![];
         let eq = eq();
@@ -349,7 +349,7 @@ impl Typescript {
             need_undef: false,
         })
     }
-    fn parse_struct<'a>(&mut self, obj: &TokenStream, pair: Pair<'a, Rule>) -> Result<Ret, Error> {
+    fn parse_struct<'a>(&mut self, obj: &TokenStream, pair: Pair<'a, Rule>) -> Result<Ret, TypescriptParseError> {
         // str = {  "{" ~ (ident ~ ":" ~ expr)? ~ ("," ~ ident ~ ":" ~ expr )* ~ "}" }
         let mut keys = vec![];
         let mut values = vec![];
